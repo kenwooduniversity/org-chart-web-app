@@ -1,0 +1,1588 @@
+<title>Kenwood Org Chart</title>
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#ffffff; --border:#e2e5ea; --border-strong:#c9cedb;
+  --text:#1c2129; --text-dim:#5b6472; --text-faint:#8b93a3;
+  --accent:#4f6bed; --accent-text:#ffffff; --danger:#d64545; --danger-bg:#fdecec;
+  --shadow:0 2px 10px rgba(20,24,32,.07), 0 1px 2px rgba(20,24,32,.06);
+  --node-bg:#ffffff; --node-shadow:0 1px 3px rgba(20,24,32,.12);
+  --canvas-dot:#dde1e8;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#14161b; --panel:#1c1f26; --border:#2b2f3a; --border-strong:#3a3f4d;
+    --text:#e7e9ee; --text-dim:#a7aebb; --text-faint:#6d7484;
+    --accent:#7b93ff; --accent-text:#0c1020; --danger:#ff6b6b; --danger-bg:#3a1f22;
+    --shadow:0 2px 14px rgba(0,0,0,.4);
+    --node-bg:#21242c; --node-shadow:0 1px 3px rgba(0,0,0,.5);
+    --canvas-dot:#2a2e38;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#14161b; --panel:#1c1f26; --border:#2b2f3a; --border-strong:#3a3f4d;
+  --text:#e7e9ee; --text-dim:#a7aebb; --text-faint:#6d7484;
+  --accent:#7b93ff; --accent-text:#0c1020; --danger:#ff6b6b; --danger-bg:#3a1f22;
+  --shadow:0 2px 14px rgba(0,0,0,.4);
+  --node-bg:#21242c; --node-shadow:0 1px 3px rgba(0,0,0,.5);
+  --canvas-dot:#2a2e38;
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;height:100vh;overflow:hidden;display:flex;flex-direction:column;}
+button{font:inherit;cursor:pointer;}
+input,select,textarea{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--border-strong);border-radius:7px;padding:6px 9px;}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:-1px;}
+.btn{background:var(--panel);border:1px solid var(--border-strong);border-radius:7px;padding:7px 12px;color:var(--text);display:inline-flex;align-items:center;gap:6px;white-space:nowrap;}
+.btn:hover{border-color:var(--accent);}
+.btn.primary{background:var(--accent);color:var(--accent-text);border-color:var(--accent);font-weight:600;}
+.btn.primary:hover{filter:brightness(1.05);}
+.btn.danger{color:var(--danger);}
+.btn.small{padding:4px 9px;font-size:12.5px;border-radius:6px;}
+.btn:disabled{opacity:.45;cursor:not-allowed;}
+.btn-icon{width:30px;height:30px;padding:0;justify-content:center;border-radius:7px;}
+
+/* header */
+header{display:flex;align-items:center;gap:10px;padding:9px 14px;background:var(--panel);border-bottom:1px solid var(--border);flex-wrap:wrap;z-index:20;}
+header .org-title{font-size:16px;font-weight:700;border:1px solid transparent;background:transparent;padding:5px 7px;border-radius:7px;min-width:120px;max-width:280px;}
+header .org-title:hover{border-color:var(--border-strong);}
+.hdr-sep{width:1px;align-self:stretch;background:var(--border);margin:0 2px;}
+.hdr-group{display:flex;align-items:center;gap:6px;}
+.grow{flex:1;}
+.search-wrap{position:relative;display:flex;align-items:center;}
+.search-wrap input{width:190px;padding-left:28px;}
+.search-wrap svg{position:absolute;left:8px;width:14px;height:14px;color:var(--text-faint);}
+.badge{font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px;background:var(--border);color:var(--text-dim);letter-spacing:.02em;}
+.badge.readonly{background:#fff3cd;color:#8a6800;}
+:root[data-theme="dark"] .badge.readonly, @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .badge.readonly{background:#3a3320;color:#e0c46a;}}
+
+/* main layout */
+.main{flex:1;display:flex;min-height:0;position:relative;}
+.canvas-wrap{flex:1;overflow:auto;position:relative;background-image:radial-gradient(var(--canvas-dot) 1px, transparent 1px);background-size:18px 18px;cursor:grab;}
+.canvas-wrap.panning{cursor:grabbing;user-select:none;}
+#canvas{position:relative;transform-origin:0 0;}
+.edge-layer{position:absolute;top:0;left:0;pointer-events:none;}
+.node{position:absolute;width:190px;background:var(--node-bg);border:1px solid var(--border);border-radius:10px;box-shadow:var(--node-shadow);padding:10px 11px;cursor:grab;transition:box-shadow .12s,border-color .12s;}
+.node:hover{border-color:var(--border-strong);}
+.node.selected{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);}
+.node.multi-selected{border-color:var(--accent);box-shadow:0 0 0 2px var(--panel), 0 0 0 4px var(--accent);}
+.node.dragging{cursor:grabbing;opacity:.85;z-index:50;}
+.node .dept-strip{position:absolute;left:0;top:0;bottom:0;width:5px;border-radius:10px 0 0 10px;}
+.node-top{display:flex;gap:8px;align-items:center;}
+.avatar{width:36px;height:36px;border-radius:50%;background:var(--border);flex:none;object-fit:cover;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--text-dim);overflow:hidden;}
+.node-title{font-weight:700;font-size:12.5px;line-height:1.25;}
+.node-name{font-size:12px;color:var(--text-dim);line-height:1.25;margin-top:1px;}
+.node-dept{margin-top:7px;font-size:10.5px;color:var(--text-faint);display:flex;align-items:center;gap:5px;}
+.node-dept .dot{width:7px;height:7px;border-radius:50%;flex:none;}
+.node .addchild{position:absolute;bottom:-11px;left:50%;transform:translateX(-50%);width:22px;height:22px;border-radius:50%;background:var(--accent);color:var(--accent-text);border:2px solid var(--bg);display:none;align-items:center;justify-content:center;font-size:15px;line-height:1;font-weight:700;}
+.node:hover .addchild{display:flex;}
+
+/* side panel */
+.panel{width:340px;background:var(--panel);border-left:1px solid var(--border);display:flex;flex-direction:column;flex:none;}
+.panel-hd{display:flex;align-items:center;justify-content:space-between;padding:13px 15px;border-bottom:1px solid var(--border);}
+.panel-hd h3{margin:0;font-size:14.5px;}
+.panel-body{flex:1;overflow:auto;padding:15px;}
+.field{margin-bottom:14px;}
+.field label{display:block;font-size:11.5px;font-weight:700;color:var(--text-dim);margin-bottom:5px;text-transform:uppercase;letter-spacing:.03em;}
+.field input,.field select,.field textarea{width:100%;}
+.field textarea{resize:vertical;min-height:64px;}
+.field .hint{font-size:11px;color:var(--text-faint);margin-top:4px;}
+.headshot-row{display:flex;align-items:center;gap:10px;}
+.headshot-row .avatar{width:56px;height:56px;font-size:18px;}
+.chain{display:flex;flex-wrap:wrap;gap:5px;align-items:center;font-size:12px;color:var(--text-dim);margin-bottom:10px;}
+.chain span.arrow{color:var(--text-faint);}
+.chain a{color:var(--accent);cursor:pointer;text-decoration:none;}
+.panel-ft{padding:12px 15px;border-top:1px solid var(--border);display:flex;gap:8px;}
+
+/* empty state */
+.empty-state{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--text-dim);text-align:center;padding:20px;}
+
+/* modal */
+.overlay{position:fixed;inset:0;background:rgba(10,12,16,.4);display:flex;align-items:center;justify-content:center;z-index:100;}
+.modal{background:var(--panel);border-radius:12px;box-shadow:var(--shadow);width:460px;max-width:92vw;max-height:82vh;display:flex;flex-direction:column;}
+.modal-hd{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;}
+.modal-hd h3{margin:0;font-size:15px;}
+.modal-body{padding:16px 18px;overflow:auto;}
+.modal-ft{padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;}
+.close-x{background:none;border:none;color:var(--text-dim);font-size:18px;width:28px;height:28px;border-radius:6px;}
+.close-x:hover{background:var(--border);}
+
+.version-row,.dept-row{display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--border);}
+.version-row:last-child,.dept-row:last-child{border-bottom:none;}
+.version-info{flex:1;min-width:0;}
+.version-info .lbl{font-weight:600;font-size:13px;}
+.version-info .ts{font-size:11.5px;color:var(--text-faint);}
+.swatch{width:20px;height:20px;border-radius:6px;flex:none;border:1px solid var(--border-strong);cursor:pointer;}
+.swatch-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;}
+.swatch-row .swatch.active{outline:2px solid var(--accent);outline-offset:1px;}
+.dept-row input[type=text]{flex:1;min-width:0;}
+
+.zoom-ctrl{position:fixed;left:16px;bottom:16px;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--border);border-radius:9px;box-shadow:var(--shadow);overflow:hidden;z-index:60;}
+.zoom-ctrl button{width:34px;height:32px;border:none;background:transparent;color:var(--text);font-size:16px;border-bottom:1px solid var(--border);}
+.zoom-ctrl button:last-child{border-bottom:none;}
+.zoom-ctrl button:hover{background:var(--bg);}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:9px 16px;border-radius:8px;font-size:13px;box-shadow:var(--shadow);z-index:200;opacity:0;transition:opacity .2s;pointer-events:none;}
+.toast.show{opacity:1;}
+::-webkit-scrollbar{width:10px;height:10px;}
+::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:6px;}
+::-webkit-scrollbar-track{background:transparent;}
+</style>
+
+<header>
+  <input class="org-title" id="orgTitleInput" value="Organization Chart" spellcheck="false"/>
+  <div class="hdr-sep"></div>
+  <div class="hdr-group">
+    <select id="viewSelect" class="btn" style="border-radius:7px;"></select>
+  </div>
+  <div class="search-wrap">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+    <input id="searchInput" placeholder="Find a position or person…" list="searchList"/>
+    <datalist id="searchList"></datalist>
+  </div>
+  <div class="grow"></div>
+  <div class="hdr-group">
+    <button class="btn" id="btnAddRoot">+ Position</button>
+    <button class="btn" id="btnDepts">Departments</button>
+    <button class="btn" id="btnPeople">People</button>
+    <button class="btn" id="btnVersions">Version history</button>
+    <div class="hdr-sep"></div>
+    <button class="btn" id="btnExportPng">Export image</button>
+    <button class="btn" id="btnExportPdf">Export PDF</button>
+  </div>
+  <span class="badge" id="roleBadge" style="display:none;"></span>
+</header>
+
+<div class="main">
+  <div class="canvas-wrap" id="canvasWrap">
+    <div id="canvas">
+      <svg class="edge-layer" id="edgeLayer"></svg>
+    </div>
+    <div class="empty-state" id="emptyState" style="display:none;">
+      <div style="font-size:32px;">🗂️</div>
+      <div style="font-size:15px;font-weight:600;color:var(--text);">No positions yet</div>
+      <div style="max-width:280px;">Add the first position to start building the chart.</div>
+      <button class="btn primary" id="btnAddFirst">+ Add first position</button>
+    </div>
+    <div class="zoom-ctrl">
+      <button id="zoomIn">+</button>
+      <button id="zoomOut">–</button>
+      <button id="zoomReset" style="font-size:11px;">Fit</button>
+    </div>
+  </div>
+
+  <div class="panel" id="profilePanel" style="display:none;">
+    <div class="panel-hd">
+      <h3>Position profile</h3>
+      <button class="close-x" id="closePanel">✕</button>
+    </div>
+    <div class="panel-body" id="panelBody"></div>
+    <div class="panel-ft" id="panelFooter"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+(function(){
+"use strict";
+
+/* ---------------- constants ---------------- */
+var NODE_W = 190, NODE_H = 78, HGAP = 26, VGAP = 56;
+var PALETTE = ["#4f6bed","#e0654a","#3fa77a","#c98a2c","#8a5fd6","#2ba8b8","#d64d84","#6b7a8f","#a3823c","#4d8fd6"];
+
+/* ---------------- state ---------------- */
+var state = {
+  positions: {},      // id -> doc
+  departments: {},    // id -> doc
+  people: {},          // id -> {id,name,affiliation,headshotId} -- centralized so one edit maps everywhere they appear
+  versions: [],
+  config: {orgTitle:"Organization Chart"},
+  selectedId: null,
+  multiSelect: new Set(),
+  deptFilter: "all",
+  readOnly: true,      // flips false once a write is confirmed possible
+  roleKnown: false,
+  scale: 1,
+  dbReady:false
+};
+
+var db=null, assetsCap=null, downloadsCap=null;
+var dragState=null;
+var saveTimers={};
+
+/* ---------------- utils ---------------- */
+function uid(prefix){ return prefix+"_"+Math.random().toString(36).slice(2,10); }
+function esc(s){ return (s==null?"":String(s)).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];}); }
+function initials(name){
+  if(!name) return "?";
+  var parts=name.trim().split(/\s+/).filter(Boolean);
+  if(parts.length===0) return "?";
+  if(parts.length===1) return parts[0][0].toUpperCase();
+  return (parts[0][0]+parts[parts.length-1][0]).toUpperCase();
+}
+function toast(msg){
+  var t=document.getElementById("toast");
+  t.textContent=msg; t.classList.add("show");
+  clearTimeout(toast._h);
+  toast._h=setTimeout(function(){t.classList.remove("show");},2600);
+}
+function debounce(key, fn, ms){
+  clearTimeout(saveTimers[key]);
+  saveTimers[key]=setTimeout(fn, ms==null?450:ms);
+}
+function linesToArr(txt){ return (txt||"").split("\n").map(function(s){return s.trim();}).filter(Boolean); }
+
+/* ---------------- custom confirm/prompt dialogs ----------------
+   Native window.confirm()/prompt() are unreliable inside a published
+   artifact's sandboxed frame (they can be blocked outright or resolve
+   instantly without ever showing), which silently aborted deletes.
+   These in-page equivalents always work and return a Promise. */
+function showConfirm(message, opts){
+  opts = opts||{};
+  return new Promise(function(resolve){
+    var html =
+      '<div class="overlay" id="confirmOverlay" style="z-index:200;"><div class="modal" style="width:400px;">'+
+      '<div class="modal-hd"><h3>'+esc(opts.title||"Please confirm")+'</h3></div>'+
+      '<div class="modal-body"><div style="font-size:13px;line-height:1.5;">'+esc(message)+'</div></div>'+
+      '<div class="modal-ft"><button class="btn" id="confirmNo">Cancel</button><button class="btn '+(opts.danger?"danger":"primary")+'" id="confirmYes">'+esc(opts.okLabel||"OK")+'</button></div>'+
+      '</div></div>';
+    document.body.insertAdjacentHTML("beforeend", html);
+    var overlay = document.getElementById("confirmOverlay");
+    function done(v){ overlay.remove(); resolve(v); }
+    overlay.addEventListener("click", function(e){ if(e.target.id==="confirmOverlay") done(false); });
+    document.getElementById("confirmNo").addEventListener("click", function(){ done(false); });
+    document.getElementById("confirmYes").addEventListener("click", function(){ done(true); });
+    setTimeout(function(){ var b=document.getElementById("confirmYes"); if(b) b.focus(); }, 0);
+  });
+}
+function showPrompt(message, defaultValue){
+  return new Promise(function(resolve){
+    var html =
+      '<div class="overlay" id="promptOverlay" style="z-index:200;"><div class="modal" style="width:400px;">'+
+      '<div class="modal-hd"><h3>'+esc(message)+'</h3></div>'+
+      '<div class="modal-body"><input type="text" id="promptInput" style="width:100%;" value="'+esc(defaultValue||"")+'"></div>'+
+      '<div class="modal-ft"><button class="btn" id="promptNo">Cancel</button><button class="btn primary" id="promptYes">OK</button></div>'+
+      '</div></div>';
+    document.body.insertAdjacentHTML("beforeend", html);
+    var overlay = document.getElementById("promptOverlay");
+    var input = document.getElementById("promptInput");
+    function done(v){ overlay.remove(); resolve(v); }
+    overlay.addEventListener("click", function(e){ if(e.target.id==="promptOverlay") done(null); });
+    document.getElementById("promptNo").addEventListener("click", function(){ done(null); });
+    document.getElementById("promptYes").addEventListener("click", function(){ done(input.value); });
+    input.addEventListener("keydown", function(e){ if(e.key==="Enter") done(input.value); if(e.key==="Escape") done(null); });
+    setTimeout(function(){ input.focus(); input.select(); }, 0);
+  });
+}
+
+/* ---------------- capability init ---------------- */
+async function initCapabilities(){
+  try{ db = await claude.use("db"); }catch(e){ db=null; }
+  try{ assetsCap = await claude.use("assets"); }catch(e){ assetsCap=null; }
+  try{ downloadsCap = await claude.use("downloads"); }catch(e){ downloadsCap=null; }
+
+  if(!db){
+    toast("This page can't connect to storage in this preview — open the published page to edit and save.");
+    render();
+    return;
+  }
+  state.dbReady = true;
+  subscribeAll();
+  probeWriteAccess();
+}
+
+function probeWriteAccess(){
+  db.doc("meta/config").update({_ping: Date.now()}).then(function(){
+    setReadOnly(false);
+  }).catch(function(err){
+    if(err && err.code==="invalid_argument"){
+      // could be "doesn't exist yet" (also invalid_argument for update) -- try set as a real permission test
+      db.doc("meta/config").get().then(function(snap){
+        if(snap.exists){ setReadOnly(true); }
+        else {
+          db.doc("meta/config").set({orgTitle:"Organization Chart", _ping: Date.now()}).then(function(){
+            setReadOnly(false);
+          }).catch(function(){ setReadOnly(true); });
+        }
+      });
+    } else {
+      setReadOnly(true);
+    }
+  });
+}
+function setReadOnly(ro){
+  state.readOnly = ro; state.roleKnown = true;
+  var b=document.getElementById("roleBadge");
+  b.style.display="inline-flex";
+  if(ro){ b.textContent="View only"; b.className="badge readonly"; }
+  else { b.textContent="Editor"; b.className="badge"; }
+  renderToolbarEnabled();
+  maybeMigratePeople();
+  maybeDedupePeople();
+}
+function renderToolbarEnabled(){
+  var ro = state.readOnly;
+  ["btnAddRoot","btnDepts","btnPeople","btnVersions","btnAddFirst"].forEach(function(id){
+    var el=document.getElementById(id); if(el) el.disabled = ro;
+  });
+}
+
+/* ---------------- subscriptions ---------------- */
+var positionsLoaded=false, peopleLoaded=false;
+function subscribeAll(){
+  db.collection("positions").onSnapshot(function(snap){
+    var map={};
+    snap.docs.forEach(function(d){ map[d.id]=Object.assign({id:d.id}, d.data()); });
+    state.positions = map;
+    positionsLoaded = true;
+    rebuildViewOptions();
+    rebuildSearch();
+    render();
+    maybeMigratePeople();
+    maybeDedupePeople();
+  }, function(err){ console.warn("positions sub error", err); });
+
+  db.collection("departments").onSnapshot(function(snap){
+    var map={};
+    snap.docs.forEach(function(d){ map[d.id]=Object.assign({id:d.id}, d.data()); });
+    state.departments = map;
+    if(Object.keys(map).length===0 && !state.readOnly && state.roleKnown){ seedIfEmpty(); }
+    rebuildViewOptions();
+    renderDeptModalIfOpen();
+    render();
+  }, function(err){ console.warn("dept sub error", err); });
+
+  db.collection("people").onSnapshot(function(snap){
+    var map={};
+    snap.docs.forEach(function(d){ map[d.id]=Object.assign({id:d.id}, d.data()); });
+    state.people = map;
+    peopleLoaded = true;
+    rebuildSearch();
+    renderPeopleModalIfOpen();
+    if(state.selectedId) refreshOpenProfilePersonBits();
+    render();
+    maybeMigratePeople();
+    maybeDedupePeople();
+  }, function(err){ console.warn("people sub error", err); });
+
+  db.doc("meta/config").onSnapshot(function(snap){
+    if(snap.exists){
+      state.config = snap.data();
+      var el=document.getElementById("orgTitleInput");
+      if(document.activeElement!==el) el.value = state.config.orgTitle || "Organization Chart";
+    }
+  }, function(err){});
+
+  db.collection("versions").orderBy("createdAt","desc").limit(30).onSnapshot(function(snap){
+    state.versions = snap.docs.map(function(d){return Object.assign({id:d.id}, d.data());});
+    renderVersionsModalIfOpen();
+  }, function(err){ console.warn("versions sub error", err); });
+}
+
+var seedAttempted=false;
+function seedIfEmpty(){
+  if(seedAttempted) return; seedAttempted=true;
+  if(Object.keys(state.positions).length>0) return;
+  seedDefaultChart().catch(function(e){ console.warn("seed failed", e); });
+}
+
+/* one-time migration: older data stored name/affiliation/headshot directly on each
+   position; fold those into shared "people" records so a person's headshot and info
+   stay in sync everywhere they hold a position. */
+var migrationAttempted=false, migrationInFlight=false;
+function maybeMigratePeople(){
+  if(migrationAttempted || migrationInFlight) return;
+  if(!positionsLoaded || !peopleLoaded) return;
+  if(state.readOnly && state.roleKnown){ migrationAttempted=true; return; }
+  if(!state.roleKnown) return; // wait until we know we can write
+  var needsMigration = Object.values(state.positions).some(function(p){ return p.name && !p.personId; });
+  if(!needsMigration){ migrationAttempted=true; return; }
+  migrationInFlight=true;
+  var byName = {};
+  Object.keys(state.people).forEach(function(pid){ byName[(state.people[pid].name||"").trim().toLowerCase()] = pid; });
+  var writes = [];
+  Object.keys(state.positions).forEach(function(id){
+    var p = state.positions[id];
+    if(!p.name || p.personId) return;
+    var key = p.name.trim().toLowerCase();
+    var pid = byName[key];
+    if(!pid){
+      pid = uid("person");
+      byName[key] = pid;
+      writes.push(db.doc("people/"+pid).set({name:p.name, affiliation:p.affiliation||"", headshotId:p.headshotId||null}));
+    } else if(p.headshotId && state.people[pid] && !state.people[pid].headshotId){
+      writes.push(db.doc("people/"+pid).update({headshotId:p.headshotId}));
+    }
+    writes.push(db.doc("positions/"+id).update({personId:pid, name:null, affiliation:null, headshotId:null}));
+  });
+  guardedWrite(function(){ return Promise.all(writes); }).then(function(){ migrationAttempted=true; migrationInFlight=false; maybeDedupePeople(); })
+    .catch(function(){ migrationInFlight=false; });
+}
+
+/* audit: if two or more person profiles share the same name (case/whitespace
+   insensitive), consolidate them into one — reassign every position pointing at a
+   duplicate over to the surviving profile, keep whichever headshot/affiliation is
+   set, and remove the extras. Runs automatically once data is loaded, and again
+   any time the People list changes, so re-typed duplicates get cleaned up too. */
+var dedupeInFlight=false;
+function maybeDedupePeople(){
+  if(dedupeInFlight) return;
+  if(!positionsLoaded || !peopleLoaded || !state.roleKnown || state.readOnly) return;
+  var groups = {};
+  Object.keys(state.people).forEach(function(pid){
+    var key = (state.people[pid].name||"").trim().toLowerCase();
+    if(!key) return;
+    (groups[key] = groups[key]||[]).push(pid);
+  });
+  var dupKeys = Object.keys(groups).filter(function(k){ return groups[k].length>1; });
+  if(dupKeys.length===0) return;
+  dedupeInFlight=true;
+  var writes=[];
+  dupKeys.forEach(function(key){
+    var ids = groups[key].slice().sort(function(a,b){
+      var score = function(pid){ var per=state.people[pid]; return (per.headshotId?2:0)+(per.affiliation?1:0); };
+      return score(b)-score(a);
+    });
+    var primaryId = ids[0], primary = state.people[primaryId];
+    var mergedAffil = primary.affiliation||"", mergedHeadshot = primary.headshotId||null;
+    ids.slice(1).forEach(function(dupId){
+      var dup = state.people[dupId];
+      if(!mergedAffil && dup.affiliation) mergedAffil = dup.affiliation;
+      if(!mergedHeadshot && dup.headshotId) mergedHeadshot = dup.headshotId;
+    });
+    if(mergedAffil!==(primary.affiliation||"") || mergedHeadshot!==(primary.headshotId||null)){
+      writes.push(db.doc("people/"+primaryId).update({affiliation:mergedAffil, headshotId:mergedHeadshot}));
+    }
+    ids.slice(1).forEach(function(dupId){
+      Object.keys(state.positions).forEach(function(posId){
+        if(state.positions[posId].personId===dupId) writes.push(db.doc("positions/"+posId).update({personId:primaryId}));
+      });
+      writes.push(db.doc("people/"+dupId).delete());
+    });
+  });
+  guardedWrite(function(){ return Promise.all(writes); }).then(function(){
+    dedupeInFlight=false;
+    toast("Consolidated "+dupKeys.length+" duplicate person profile"+(dupKeys.length===1?"":"s")+".");
+  }).catch(function(){ dedupeInFlight=false; });
+}
+/* find an existing person by name (case/whitespace insensitive) so new-person flows
+   reuse a profile instead of creating a duplicate */
+function findPersonByName(name){
+  var key=(name||"").trim().toLowerCase(); if(!key) return null;
+  var found=null;
+  Object.keys(state.people).forEach(function(pid){ if((state.people[pid].name||"").trim().toLowerCase()===key) found=pid; });
+  return found;
+}
+
+/* ---------------- default seed data (Kenwood) ---------------- */
+function seedDefaultChart(){
+  var depts = [
+    {id:"governance", name:"Governance", color:PALETTE[5]},
+    {id:"executive", name:"Executive", color:PALETTE[0]},
+    {id:"finance", name:"Finance", color:PALETTE[2]},
+    {id:"legal", name:"Legal", color:PALETTE[6]},
+    {id:"it", name:"IT", color:PALETTE[7]},
+    {id:"curriculum", name:"Curriculum", color:PALETTE[3]},
+    {id:"grants", name:"Grants", color:PALETTE[4]},
+    {id:"external", name:"External Relations", color:PALETTE[8]},
+    {id:"realestate", name:"Real Estate", color:PALETTE[1]},
+    {id:"events", name:"Events", color:PALETTE[9]},
+    {id:"marketing", name:"Marketing", color:PALETTE[2]===PALETTE[2]?"#c98a2c":PALETTE[2]},
+    {id:"advisory", name:"Advisory Board", color:"#6b7a8f"}
+  ];
+  var P = [];
+  var peopleByName = {};   // name (lowercase) -> personId, so the same person shares one record everywhere
+  var peopleWrites = [];
+  function personIdFor(name, affil){
+    if(!name) return null;
+    var key = name.trim().toLowerCase();
+    if(!peopleByName[key]){
+      var pid = uid("person");
+      peopleByName[key] = pid;
+      peopleWrites.push(db.doc("people/"+pid).set({name:name, affiliation:affil||"", headshotId:null}));
+    }
+    return peopleByName[key];
+  }
+  function add(id,title,name,dept,reportsTo,resp,kpis,affil){
+    P.push({id:id,title:title,personId:personIdFor(name,affil),department:dept,reportsTo:reportsTo||null,
+      responsibilities:resp||[],kpis:kpis||[],manual:false,x:0,y:0});
+  }
+  add("board","Board of Directors","","governance",null,["Ensures a mission-aligned vision and strategy"],[]);
+  add("board-chair","Chair","Graig Arcuri","governance","board");
+  add("board-vicechair","Vice Chair","Alla Arcuri","governance","board");
+  add("board-member","Board Member","Paul Lomanto","governance","board");
+
+  add("officers","Officers","","governance","board",["Creation of vision and strategy"],[]);
+  add("president","President","Graig Arcuri","governance","officers");
+  add("vp-officer","Vice President","Alla Arcuri","governance","officers");
+  add("treasurer","Treasurer","Graig Arcuri","governance","officers");
+  add("secretary","Secretary","Paul Lomanto","governance","officers");
+
+  add("exec-director","Executive Director","Paul Lomanto","executive","officers",
+    ["Implement & execute vision","Oversee fundraising","Oversee partnerships","Oversee leadership team",
+     "Ensure non-profit compliance","Hiring staff","Budget and operations","Reporting to board & funders",
+     "Chair Advisory Board","Donor follow-up"],
+    ["100% placement rate","1 successful grant / 6 months","Min. 5 active Advisory Board members","Diversity, accessibility & impact for marketing"],
+    "Assistant Vice President, QuickFi");
+
+  add("director-law","Director of Law","Michael Bryant","legal","exec-director",
+    ["Ensure all regulatory and compliance measures are taken for all programs and the organization"],[]);
+  add("director-finance","Director of Finance","","finance","exec-director",
+    ["Ensure all accounting and finance measures are taken for all programs and the organization"],[]);
+  add("it-director","IT Director","Sriram Venkatassamy","it","exec-director",
+    ["Ensure the organization has the right technology to operate effectively","Manage Google Workspace, Slack, Zoom, Notion, n8n, Canva, social suite, etc."],[]);
+
+  add("vp-curriculum","Vice President of Curriculum","Eason Lee","curriculum","exec-director",
+    ["Create, implement & monitor Career and Leadership Launchpads","Ensure hands-on learning aligns with mission",
+     "Curriculum development","Track student outcomes","Source, vet, hire & supervise directors, advisors and interns"],
+    ["Students onboarded","Student impact","100% placement rate"],
+    "Assistant Director of Admissions, Le Moyne College");
+
+  add("vp-grants","Vice President of Grants","Michael Murman","grants","exec-director",
+    ["Writing grants","Researching funding opportunities","Building relationships with foundations","Reporting outcomes to grantors"],
+    ["1 successful grant / 6 months"]);
+
+  add("vp-external","Vice President of External Relations","Paul Lomanto","external","exec-director",
+    ["Outreach to potential sponsors/speakers/donors","Build & maintain external partnerships",
+     "Year-round corporate engagement","Relationship management / CRM","Maintain CRM for real estate & events funding"],
+    ["5 active Advisory Board members at all times","# of active partners / engaged companies"]);
+
+  add("advisory-board","Kenwood Advisory Board (Chair)","Paul Lomanto","advisory","exec-director",
+    ["Sponsor and theme events","Give access to talent","Influence curriculum & programs that impact economy/community","Mentor students"],[]);
+  add("advisory-kerry","Advisory Board Member","Kerry LaGrou","advisory","advisory-board",[],[], "VP, NY Sales, Stewart Title Guaranty Company");
+  add("advisory-joe","Advisory Board Member","Joe Sinnona","advisory","advisory-board",[],[], "eXp Realty");
+  add("advisory-christine","Advisory Board Member","Christine O'Connell","advisory","advisory-board",[],[], "CRM / Liberty");
+
+  add("dir-realestate","Director of Real Estate Program","Graig Arcuri","realestate","vp-curriculum",
+    ["Work with VP of Curriculum to create courses","Interview, onboard, place & evaluate student candidates",
+     "Oversee instructors","Oversee construction, development, leasing, marketing, maintenance, finance, legal & compliance for assets"],
+    []);
+  add("dir-events","Director of Event Program","Kenneth Ocasio","events","vp-curriculum",
+    ["Work with VP of Curriculum to create courses","Interview, onboard, place & evaluate student candidates",
+     "Oversee instructors","Oversee creation, planning, execution, review and profit of events"],
+    ["Event satisfaction","Attendee count","1-2 large events, 4-6 small events / year"]);
+  add("dir-marketing","Director of Marketing Program","Andjela Djapa","marketing","vp-curriculum",
+    ["Work with VP of Curriculum to create courses","Interview, onboard, place & evaluate student candidates",
+     "Oversee instructors","Oversee marketing plan, social media, content, website, email & promotion"],
+    ["Views","Engagement","Leads","Ticket sales","Consistent quality & output"]);
+
+  add("adv-acquisition","Acquisition Advisor","Graig Arcuri","realestate","dir-realestate",
+    ["Oversee analysis, underwriting, acquisition, cash flow, legal & compliance for assets","Oversee & mentor student interns"]);
+  add("adv-propmgmt","Property Management Advisor","Graig Arcuri","realestate","dir-realestate",
+    ["Oversee leasing, marketing, renovation and maintenance of assets","Oversee & mentor student interns"]);
+  add("adv-realty","Realty Advisor (Sales)","","realestate","dir-realestate",
+    ["Oversee course participants","Sounding board for participants","Oversee & mentor student interns"]);
+
+  add("adv-sponsorship","Sponsorship Outreach Advisor (Sales)","Hayden Levi","events","dir-events",
+    ["Facilitate outreach for tablers, sponsorships & speakers","Work with VP of External Relations on outreach"]);
+  add("adv-eventops","Event Operations Advisor","Holli Stone","events","dir-events",
+    ["Oversee event operations","Venue exploration","AV setup","Day-of show"],[],"Assistant Director of Campus Events, SUNY Oswego");
+  add("adv-eventexp","Event Experience / Design Advisor","Holli Stone","events","dir-events",
+    ["Oversee event design and attendee experience","Manage speakers & vendors","Event follow-up"],[],"Assistant Director of Campus Events, SUNY Oswego");
+
+  add("adv-social","Social Media Management & Creation Advisor","Zachary Nusimow","marketing","dir-marketing",
+    ["Oversee TikTok, Facebook, Instagram & LinkedIn marketing plan across all programs"],[],"Field Sales & Marketing Representative, Techtronic Industries");
+  add("adv-website","Website and Campaign Advisor","Andjela Djapa","marketing","dir-marketing",
+    ["Oversee content creation across all programs"]);
+  add("adv-eventpromo","Event Advertising and Promotions Advisor","Andjela Djapa","marketing","dir-marketing",
+    ["Oversee event advertising and promotions","Student & professional ticket sales"]);
+
+  var writes = depts.map(function(d){ return db.doc("departments/"+d.id).set({name:d.name,color:d.color}); })
+    .concat(peopleWrites)
+    .concat(P.map(function(p){ return db.doc("positions/"+p.id).set(p); }))
+    .concat([db.doc("meta/config").set({orgTitle:"Kenwood Organization Chart", _ping:Date.now()})]);
+  return Promise.all(writes);
+}
+
+/* ---------------- view options ---------------- */
+function rebuildViewOptions(){
+  var sel=document.getElementById("viewSelect");
+  var prev = state.deptFilter;
+  var opts = ['<option value="all">Full org chart</option>'];
+  Object.keys(state.departments).sort(function(a,b){return state.departments[a].name.localeCompare(state.departments[b].name);}).forEach(function(id){
+    opts.push('<option value="'+id+'">'+esc(state.departments[id].name)+'</option>');
+  });
+  sel.innerHTML = opts.join("");
+  sel.value = state.departments[prev] || prev==="all" ? prev : "all";
+  if(sel.value!==prev) state.deptFilter = sel.value;
+}
+function personOf(p){ return (p && p.personId) ? state.people[p.personId] : null; }
+function rebuildSearch(){
+  var dl=document.getElementById("searchList");
+  dl.innerHTML = Object.values(state.positions).map(function(p){
+    var person = personOf(p);
+    return '<option value="'+esc(p.title)+(person?(" — "+esc(person.name)):"")+'">';
+  }).join("");
+}
+
+/* ---------------- layout ---------------- */
+function visiblePositions(){
+  var all = state.positions;
+  if(state.deptFilter==="all") return all;
+  var out={};
+  Object.keys(all).forEach(function(id){ if(all[id].department===state.deptFilter) out[id]=all[id]; });
+  return out;
+}
+function computeLayout(vis){
+  var childrenOf={};
+  Object.keys(vis).forEach(function(id){
+    var p=vis[id]; var parent = p.reportsTo && vis[p.reportsTo] ? p.reportsTo : null;
+    if(!childrenOf[parent]) childrenOf[parent]=[];
+    childrenOf[parent].push(id);
+  });
+  Object.keys(childrenOf).forEach(function(k){ childrenOf[k].sort(function(a,b){ return (vis[a].title||"").localeCompare(vis[b].title||""); }); });
+  var roots = childrenOf[null] || [];
+  var pos = {};
+  var unit = NODE_W+HGAP;
+  function widthOf(id){
+    var kids = childrenOf[id]||[];
+    if(kids.length===0) return unit;
+    var sum = kids.reduce(function(s,k){ return s+widthOf(k); },0);
+    return Math.max(sum, unit);
+  }
+  var cursorX = 0;
+  function place(id, xStart, depth){
+    var kids = childrenOf[id]||[];
+    var w = widthOf(id);
+    var cx = xStart + w/2;
+    pos[id] = {x: cx-NODE_W/2, y: depth*(NODE_H+VGAP)};
+    var kx = xStart;
+    kids.forEach(function(k){ var kw=widthOf(k); place(k, kx, depth+1); kx+=kw; });
+  }
+  roots.forEach(function(r){ var w=widthOf(r); place(r, cursorX, 0); cursorX+=w; });
+  // apply manual overrides
+  Object.keys(vis).forEach(function(id){
+    var p=vis[id];
+    if(p.manual && typeof p.x==="number" && typeof p.y==="number"){ pos[id] = {x:p.x, y:p.y}; }
+  });
+  return {pos:pos, childrenOf:childrenOf, roots:roots};
+}
+
+/* ---------------- rendering ---------------- */
+var nodeEls = {};
+var PAD = 480; // open space kept around the chart on every side, so there's no "ceiling" or wall to hit
+var canvasOffset = {x:PAD, y:PAD};
+var hasAutoScrolled = false;
+function render(){
+  var vis = visiblePositions();
+  var wrap = document.getElementById("canvasWrap");
+  var canvas = document.getElementById("canvas");
+  var empty = document.getElementById("emptyState");
+  var hasAny = Object.keys(state.positions).length>0;
+  empty.style.display = hasAny ? "none":"flex";
+  if(!hasAny){ canvas.innerHTML='<svg class="edge-layer" id="edgeLayer"></svg>'; canvas.style.width="1600px"; canvas.style.height="1000px"; return; }
+
+  var layout = computeLayout(vis);
+  var pos = layout.pos;
+
+  // clear stale nodes
+  Object.keys(nodeEls).forEach(function(id){ if(!vis[id]){ nodeEls[id].remove(); delete nodeEls[id]; } });
+
+  // find the content's bounding box (positions can go negative once dragged), then pad every side
+  var minX=0, minY=0, maxX=NODE_W, maxY=NODE_H;
+  Object.keys(pos).forEach(function(id){
+    minX=Math.min(minX,pos[id].x); minY=Math.min(minY,pos[id].y);
+    maxX=Math.max(maxX,pos[id].x+NODE_W); maxY=Math.max(maxY,pos[id].y+NODE_H);
+  });
+  var offsetX = PAD - minX, offsetY = PAD - minY;
+  canvasOffset = {x:offsetX, y:offsetY};
+  canvas.style.width = (maxX-minX+PAD*2)+"px";
+  canvas.style.height = (maxY-minY+PAD*2)+"px";
+  canvas.style.transform = "scale("+state.scale+")";
+
+  Object.keys(vis).forEach(function(id){
+    var p = vis[id];
+    var el = nodeEls[id];
+    if(!el){
+      el = document.createElement("div");
+      el.className="node";
+      el.innerHTML = '<div class="dept-strip"></div><div class="node-top"><div class="avatar"></div><div style="min-width:0;"><div class="node-title"></div><div class="node-name"></div></div></div><div class="node-dept"><span class="dot"></span><span class="dept-label"></span></div><button class="addchild" title="Add direct report">+</button>';
+      canvas.appendChild(el);
+      nodeEls[id]=el;
+      el.addEventListener("pointerdown", function(ev){ onNodePointerDown(ev, id); });
+      el.addEventListener("click", function(ev){
+        if(el._dragged) return;
+        if(ev.ctrlKey || ev.metaKey){
+          if(state.multiSelect.has(id)) state.multiSelect.delete(id); else state.multiSelect.add(id);
+          if(state.multiSelect.size<2){ /* keep at least the toggle visible even with one */ }
+          render();
+          return;
+        }
+        if(state.multiSelect.size){ state.multiSelect.clear(); }
+        openProfile(id);
+      });
+      el.querySelector(".addchild").addEventListener("click", function(ev){ ev.stopPropagation(); addPosition(id); });
+    }
+    var loc = pos[id]||{x:0,y:0};
+    el.style.left = (loc.x+offsetX)+"px"; el.style.top = (loc.y+offsetY)+"px";
+    el.style.width = NODE_W+"px";
+    el.classList.toggle("selected", state.selectedId===id);
+    el.classList.toggle("multi-selected", state.multiSelect.has(id));
+    var dept = state.departments[p.department];
+    var person = personOf(p);
+    el.querySelector(".dept-strip").style.background = dept?dept.color:"var(--border-strong)";
+    el.querySelector(".node-title").textContent = p.title||"Untitled position";
+    el.querySelector(".node-name").textContent = person?person.name:"— vacant —";
+    el.querySelector(".dept-label").textContent = dept?dept.name:"No department";
+    el.querySelector(".dot").style.background = dept?dept.color:"var(--border-strong)";
+    var av = el.querySelector(".avatar");
+    if(person && person.headshotId){
+      av.style.background="transparent";
+      av.innerHTML = '<img src="/_blob/'+person.headshotId+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />';
+    } else {
+      av.style.background="var(--border)";
+      av.innerHTML = "";
+      av.textContent = person? initials(person.name) : "?";
+    }
+  });
+
+  drawEdges(vis, pos, offsetX, offsetY);
+
+  if(!hasAutoScrolled){
+    hasAutoScrolled = true;
+    zoomFitAll();
+  }
+}
+/* zoom/scroll so the whole visible org structure fits in the current viewport */
+function zoomFitAll(){
+  var vis = visiblePositions();
+  if(Object.keys(vis).length===0) return;
+  var layout = computeLayout(vis);
+  var pos = layout.pos;
+  var ids = Object.keys(pos);
+  var minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  ids.forEach(function(id){
+    minX=Math.min(minX,pos[id].x); minY=Math.min(minY,pos[id].y);
+    maxX=Math.max(maxX,pos[id].x+NODE_W); maxY=Math.max(maxY,pos[id].y+NODE_H);
+  });
+  var contentW = Math.max(1,maxX-minX), contentH = Math.max(1,maxY-minY);
+  var wrap = document.getElementById("canvasWrap");
+  var margin = 48;
+  var viewW = Math.max(100, wrap.clientWidth-margin*2), viewH = Math.max(100, wrap.clientHeight-margin*2);
+  var newScale = Math.min(viewW/contentW, viewH/contentH);
+  newScale = Math.max(.3, Math.min(1.15, newScale));
+  state.scale = newScale;
+  render();
+  var contentLeftPx = (minX+canvasOffset.x)*newScale;
+  var contentTopPx = (minY+canvasOffset.y)*newScale;
+  var contentWpx = contentW*newScale, contentHpx = contentH*newScale;
+  wrap.scrollLeft = Math.max(0, contentLeftPx - Math.max(0,(wrap.clientWidth-contentWpx)/2));
+  wrap.scrollTop = Math.max(0, contentTopPx - Math.max(0,(wrap.clientHeight-contentHpx)/2));
+}
+function drawEdges(vis, pos, offsetX, offsetY){
+  var svg = document.getElementById("edgeLayer");
+  var canvas = document.getElementById("canvas");
+  svg.setAttribute("width", canvas.style.width);
+  svg.setAttribute("height", canvas.style.height);
+  var paths=[];
+  Object.keys(vis).forEach(function(id){
+    var p=vis[id]; var parent = p.reportsTo;
+    if(parent && vis[parent] && pos[id] && pos[parent]){
+      var a=pos[parent], b=pos[id];
+      var x1=a.x+offsetX+NODE_W/2, y1=a.y+offsetY+NODE_H;
+      var x2=b.x+offsetX+NODE_W/2, y2=b.y+offsetY;
+      var midY=(y1+y2)/2;
+      var d = "M"+x1+","+y1+" C"+x1+","+midY+" "+x2+","+midY+" "+x2+","+y2;
+      paths.push('<path d="'+d+'" stroke="var(--border-strong)" stroke-width="1.6" fill="none"/>');
+    }
+  });
+  svg.innerHTML = paths.join("");
+}
+
+/* ---------------- drag ---------------- */
+function collectDescendants(id, out, seen){
+  seen = seen || {};
+  Object.values(state.positions).forEach(function(p){
+    if(p.reportsTo===id && !seen[p.id]){
+      seen[p.id]=true; out.push(p.id); collectDescendants(p.id, out, seen);
+    }
+  });
+}
+function onNodePointerDown(ev, id){
+  if(state.readOnly) return;
+  if(ev.ctrlKey || ev.metaKey) return; // ctrl+click is for toggling selection, not dragging
+  var el = nodeEls[id];
+  el._dragged=false;
+  var startX=ev.clientX, startY=ev.clientY;
+
+  // if this node is part of an active multi-selection, drag the whole group together;
+  // either way, everyone who (directly or indirectly) reports to a dragged node comes along too
+  var baseIds = (state.multiSelect.has(id) && state.multiSelect.size>1) ? Array.from(state.multiSelect) : [id];
+  var groupSet = {};
+  baseIds.forEach(function(bid){
+    groupSet[bid]=true;
+    var desc=[]; collectDescendants(bid, desc);
+    desc.forEach(function(d){ groupSet[d]=true; });
+  });
+  var groupIds = Object.keys(groupSet);
+  var origins = {};
+  groupIds.forEach(function(gid){
+    var gEl = nodeEls[gid];
+    if(gEl) origins[gid] = {left:parseFloat(gEl.style.left), top:parseFloat(gEl.style.top)};
+  });
+
+  el.classList.add("dragging");
+  groupIds.forEach(function(gid){ if(nodeEls[gid]) nodeEls[gid].classList.add("dragging"); });
+  el.setPointerCapture(ev.pointerId);
+
+  function move(e){
+    var dx=(e.clientX-startX)/state.scale, dy=(e.clientY-startY)/state.scale;
+    if(Math.abs(dx)>3||Math.abs(dy)>3) el._dragged=true;
+    groupIds.forEach(function(gid){
+      var gEl=nodeEls[gid], o=origins[gid];
+      if(!gEl||!o) return;
+      gEl.style.left=(o.left+dx)+"px";
+      gEl.style.top=(o.top+dy)+"px";
+    });
+  }
+  function up(e){
+    groupIds.forEach(function(gid){ if(nodeEls[gid]) nodeEls[gid].classList.remove("dragging"); });
+    el.removeEventListener("pointermove", move);
+    el.removeEventListener("pointerup", up);
+    if(el._dragged){
+      var writes = groupIds.map(function(gid){
+        var gEl=nodeEls[gid]; if(!gEl) return Promise.resolve();
+        // el.style.left/top are in rendered (padded) space; store raw layout coordinates
+        var nx=parseFloat(gEl.style.left)-canvasOffset.x, ny=parseFloat(gEl.style.top)-canvasOffset.y;
+        return db.doc("positions/"+gid).update({manual:true, x:nx, y:ny});
+      });
+      guardedWrite(function(){ return Promise.all(writes); });
+    }
+    setTimeout(function(){ el._dragged=false; },0);
+  }
+  el.addEventListener("pointermove", move);
+  el.addEventListener("pointerup", up);
+}
+
+/* ---------------- guarded writes ---------------- */
+function guardedWrite(fn){
+  // resolves true on success, false on a swallowed failure — callers that must not
+  // proceed (e.g. closing a panel) after a failed save should check the result
+  return fn().then(function(){ return true; }).catch(function(err){
+    if(err && err.code==="invalid_argument"){ setReadOnly(true); toast("You have view-only access — changes can't be saved."); }
+    else { console.warn(err); toast("Couldn't save that change — please try again."); }
+    return false;
+  });
+}
+
+/* ---------------- CRUD ---------------- */
+function addPosition(parentId){
+  if(state.readOnly) return;
+  var id = uid("pos");
+  var deptGuess = parentId && state.positions[parentId] ? state.positions[parentId].department : (Object.keys(state.departments)[0]||null);
+  var parentPos = parentId && state.positions[parentId];
+  var doc = {id:id, title:"New Position", personId:null, department: deptGuess, reportsTo: parentId||null,
+    responsibilities:[], kpis:[], manual:false, x:0, y:0};
+  if(parentPos){
+    doc.manual = true; doc.x = (parentPos.x||0); doc.y=(parentPos.y||0)+NODE_H+VGAP;
+  }
+  guardedWrite(function(){ return db.doc("positions/"+id).set(doc); }).then(function(ok){ if(ok) openProfile(id); });
+}
+function duplicatePosition(id){
+  if(state.readOnly || !state.positions[id]) return;
+  var src = state.positions[id];
+  var newId = uid("pos");
+  var doc = {
+    id: newId,
+    title: src.title ? src.title+" (Copy)" : "New Position",
+    personId: null, // a duplicated position is a new, vacant slot — it doesn't clone the person
+    department: src.department || null,
+    reportsTo: src.reportsTo || null,
+    responsibilities: (src.responsibilities||[]).slice(),
+    kpis: (src.kpis||[]).slice(),
+    manual: true,
+    x: (src.x||0) + NODE_W + HGAP,
+    y: (src.y||0)
+  };
+  guardedWrite(function(){ return db.doc("positions/"+newId).set(doc); }).then(function(ok){
+    if(ok){ toast("Position duplicated."); openProfile(newId); }
+  });
+}
+function deletePosition(id){
+  if(state.readOnly || !state.positions[id]) return;
+  var kids = Object.values(state.positions).filter(function(p){ return p.reportsTo===id; });
+  var msg = "Delete this position box from the chart?"+
+    (kids.length? (" "+kids.length+" direct report(s) will move up to report to its manager.") : "")+
+    " The person's profile (name, photo, info) is kept and stays assigned to any other positions they hold.";
+  showConfirm(msg, {title:"Delete position", okLabel:"Delete", danger:true}).then(function(ok){
+    if(!ok) return;
+    var parent = state.positions[id].reportsTo || null;
+    var writes = kids.map(function(k){ return db.doc("positions/"+k.id).update({reportsTo: parent}); });
+    // deliberately: this only removes the POSITION document — the person's record in "people",
+    // and any OTHER position that person still holds, are untouched
+    writes.push(db.doc("positions/"+id).delete());
+    return guardedWrite(function(){ return Promise.all(writes); }).then(function(saved){
+      if(saved){ closeProfile(); toast("Position deleted."); }
+    });
+  });
+}
+
+/* ---------------- profile panel ---------------- */
+function chainOf(id){
+  var chain=[]; var cur=state.positions[id]; var guard=0;
+  while(cur && cur.reportsTo && state.positions[cur.reportsTo] && guard++<40){
+    cur = state.positions[cur.reportsTo]; chain.unshift(cur);
+  }
+  return chain;
+}
+function openProfile(id){
+  state.selectedId=id;
+  render();
+  var p = state.positions[id]; if(!p) return;
+  var panel = document.getElementById("profilePanel");
+  panel.style.display="flex";
+  var deptOpts = Object.keys(state.departments).sort(function(a,b){return state.departments[a].name.localeCompare(state.departments[b].name);})
+    .map(function(k){ return '<option value="'+k+'"'+(p.department===k?" selected":"")+'>'+esc(state.departments[k].name)+'</option>'; })
+    .concat(['<option value="__new__">+ New department…</option>']).join("");
+  var reportsToOpts = ['<option value="">— none (top of chart) —</option>'].concat(
+    Object.keys(state.positions).filter(function(k){ return k!==id && !isDescendant(k,id); })
+      .sort(function(a,b){ return (state.positions[a].title||"").localeCompare(state.positions[b].title||""); })
+      .map(function(k){ var kp=personOf(state.positions[k]); return '<option value="'+k+'"'+(p.reportsTo===k?" selected":"")+'>'+esc(state.positions[k].title)+(kp?(" — "+esc(kp.name)):"")+'</option>'; })
+  ).join("");
+  var chain = chainOf(id);
+  var chainHtml = chain.map(function(c){ return '<a data-jump="'+c.id+'">'+esc(c.title)+'</a><span class="arrow">›</span>'; }).join("");
+
+  var person = personOf(p);
+  var otherPositions = person ? Object.values(state.positions).filter(function(op){ return op.personId===person.id && op.id!==id; }) : [];
+  var peopleOpts = ['<option value="">— vacant / no person assigned —</option>'].concat(
+    Object.keys(state.people).sort(function(a,b){ return state.people[a].name.localeCompare(state.people[b].name); })
+      .map(function(pid){ return '<option value="'+pid+'"'+(p.personId===pid?" selected":"")+'>'+esc(state.people[pid].name)+'</option>'; })
+  ).concat(['<option value="__new__">+ New person…</option>']).join("");
+
+  var body = document.getElementById("panelBody");
+  body.innerHTML =
+    (chain.length? '<div class="chain">'+chainHtml+'<b>'+esc(p.title)+'</b></div>' : '') +
+    '<div class="field"><label>Title</label><input id="pfTitle" value="'+esc(p.title)+'"></div>'+
+    '<div class="field"><label>Person</label><select id="pfPerson">'+peopleOpts+'</select>'+
+      '<div class="hint">One profile per person — assigning them here reuses their photo and info everywhere they appear.</div></div>'+
+    (person ?
+      '<div class="field"><label>Headshot</label><div class="headshot-row">'+
+        '<div class="avatar" id="pfAvatar">'+(person.headshotId? '<img src="/_blob/'+person.headshotId+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">' : esc(initials(person.name)))+'</div>'+
+        '<input type="file" accept="image/*" id="pfHeadshotFile" style="display:none;">'+
+        '<button class="btn small" id="pfUploadBtn">Upload</button>'+
+        (person.headshotId? '<button class="btn small danger" id="pfRemovePhoto">Remove</button>' : '')+
+      '</div></div>'+
+      '<div class="field"><label>Person\'s name</label><input id="pfPersonName" value="'+esc(person.name)+'"></div>'+
+      '<div class="field"><label>Outside affiliation (optional)</label><input id="pfAffil" placeholder="e.g. VP Sales, Acme Corp" value="'+esc(person.affiliation||"")+'"></div>'+
+      (otherPositions.length? '<div class="hint" style="margin:-6px 0 14px;">Also holds: '+otherPositions.map(function(op){ return '<a data-jump="'+op.id+'" style="color:var(--accent);cursor:pointer;">'+esc(op.title)+'</a>'; }).join(", ")+'</div>' : '')
+      : '') +
+    '<div class="field"><label>Department</label><select id="pfDept">'+deptOpts+'</select></div>'+
+    '<div class="field"><label>Reports to</label><select id="pfReportsTo">'+reportsToOpts+'</select></div>'+
+    '<div class="field"><label>Responsibilities <span class="hint" style="text-transform:none;">(one per line)</span></label><textarea id="pfResp" rows="5">'+esc((p.responsibilities||[]).join("\n"))+'</textarea></div>'+
+    '<div class="field"><label>KPIs <span class="hint" style="text-transform:none;">(one per line)</span></label><textarea id="pfKpis" rows="4">'+esc((p.kpis||[]).join("\n"))+'</textarea></div>'+
+    (p.manual? '<button class="btn small" id="pfResetPos">Reset position (auto layout)</button>' : '');
+
+  document.getElementById("panelFooter").innerHTML =
+    '<button class="btn" id="pfAddChild">+ Direct report</button><button class="btn" id="pfDuplicate">Duplicate</button><span class="grow" style="flex:1;"></span><button class="btn danger" id="pfDelete">Delete position</button>';
+
+  body.querySelectorAll("[data-jump]").forEach(function(a){ a.addEventListener("click", function(){ openProfile(a.getAttribute("data-jump")); }); });
+
+  function bindField(elId, key, transform, collection, docId){
+    var el = document.getElementById(elId);
+    if(!el) return;
+    el.disabled = state.readOnly;
+    el.addEventListener("input", function(){
+      var val = transform? transform(el.value) : el.value;
+      debounce("pf_"+(docId||id)+"_"+key, function(){ guardedWrite(function(){ return db.doc((collection||"positions")+"/"+(docId||id)).update((function(){var o={};o[key]=val;return o;})()); }); });
+    });
+    if(el.tagName==="SELECT") el.addEventListener("change", function(){ el.dispatchEvent(new Event("input")); });
+  }
+  bindField("pfTitle","title");
+  bindField("pfReportsTo","reportsTo", function(v){ return v||null; });
+  bindField("pfResp","responsibilities", linesToArr);
+  bindField("pfKpis","kpis", linesToArr);
+  if(person){
+    bindField("pfPersonName","name", null, "people", person.id);
+    bindField("pfAffil","affiliation", null, "people", person.id);
+  }
+
+  var personSel = document.getElementById("pfPerson");
+  personSel.disabled = state.readOnly;
+  personSel.addEventListener("change", function(){
+    var v = personSel.value;
+    if(v==="__new__"){
+      showPrompt("Name of the person to add:").then(function(name){
+        name = name && name.trim();
+        if(!name){ personSel.value = p.personId||""; return; }
+        var existingId = findPersonByName(name);
+        if(existingId){
+          toast('"'+state.people[existingId].name+'" already has a profile — using it.');
+          guardedWrite(function(){ return db.doc("positions/"+id).update({personId:existingId}); }).then(function(){ openProfile(id); });
+          return;
+        }
+        var newId = uid("person");
+        guardedWrite(function(){
+          return db.doc("people/"+newId).set({name:name, affiliation:"", headshotId:null})
+            .then(function(){ return db.doc("positions/"+id).update({personId:newId}); });
+        }).then(function(){ openProfile(id); });
+      });
+      return;
+    }
+    guardedWrite(function(){ return db.doc("positions/"+id).update({personId: v||null}); }).then(function(){ openProfile(id); });
+  });
+
+  var deptSel = document.getElementById("pfDept");
+  deptSel.disabled = state.readOnly;
+  deptSel.addEventListener("change", function(){
+    var v = deptSel.value;
+    if(v==="__new__"){
+      deptSel.value = p.department||"";
+      openAddDeptModal(function(newDeptId){
+        guardedWrite(function(){ return db.doc("positions/"+id).update({department:newDeptId}); }).then(function(){ openProfile(id); });
+      });
+      return;
+    }
+    guardedWrite(function(){ return db.doc("positions/"+id).update({department: v||null}); });
+  });
+
+  var addBtn=document.getElementById("pfAddChild"); addBtn.disabled=state.readOnly;
+  addBtn.addEventListener("click", function(){ addPosition(id); });
+  var dupBtn=document.getElementById("pfDuplicate"); dupBtn.disabled=state.readOnly;
+  dupBtn.addEventListener("click", function(){ duplicatePosition(id); });
+  var delBtn=document.getElementById("pfDelete"); delBtn.disabled=state.readOnly;
+  delBtn.addEventListener("click", function(){ deletePosition(id); });
+  var resetBtn=document.getElementById("pfResetPos");
+  if(resetBtn) resetBtn.addEventListener("click", function(){ guardedWrite(function(){ return db.doc("positions/"+id).update({manual:false}); }); });
+
+  var upBtn=document.getElementById("pfUploadBtn");
+  if(upBtn && person){
+    upBtn.disabled = state.readOnly || !assetsCap;
+    upBtn.addEventListener("click", function(){ document.getElementById("pfHeadshotFile").click(); });
+    document.getElementById("pfHeadshotFile").addEventListener("change", function(e){
+      var f = e.target.files[0]; if(!f || !assetsCap) return;
+      upBtn.textContent="Uploading…"; upBtn.disabled=true;
+      assetsCap.upload(f).then(function(res){
+        return guardedWrite(function(){ return db.doc("people/"+person.id).update({headshotId: res.id}); });
+      }).catch(function(err){ toast("Upload failed: "+(err&&err.message||"try a smaller image")); })
+        .finally(function(){ upBtn.textContent="Upload"; upBtn.disabled=state.readOnly; });
+    });
+    var rmBtn=document.getElementById("pfRemovePhoto");
+    if(rmBtn) rmBtn.addEventListener("click", function(){ guardedWrite(function(){ return db.doc("people/"+person.id).update({headshotId:null}); }); });
+  }
+}
+function refreshOpenProfilePersonBits(){
+  var panel = document.getElementById("profilePanel");
+  if(panel && panel.style.display!=="none" && state.selectedId && state.positions[state.selectedId]) openProfile(state.selectedId);
+}
+function isDescendant(candidateId, ofId){
+  var cur = state.positions[candidateId]; var guard=0;
+  while(cur && cur.reportsTo && guard++<40){
+    if(cur.reportsTo===ofId) return true;
+    cur = state.positions[cur.reportsTo];
+  }
+  return false;
+}
+function closeProfile(){
+  state.selectedId=null;
+  document.getElementById("profilePanel").style.display="none";
+  render();
+}
+
+/* ---------------- departments modal ---------------- */
+var deptModalOpen=false;
+function openDeptModal(){
+  deptModalOpen=true;
+  var html =
+    '<div class="overlay" id="deptOverlay"><div class="modal">'+
+    '<div class="modal-hd"><h3>Departments</h3><button class="close-x" id="deptClose">✕</button></div>'+
+    '<div class="modal-body" id="deptList"></div>'+
+    '<div class="modal-ft"><button class="btn primary" id="deptAdd" style="margin-right:auto;">+ Add department</button><button class="btn" id="deptDone">Done</button></div>'+
+    '</div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+  document.getElementById("deptOverlay").addEventListener("click", function(e){ if(e.target.id==="deptOverlay") closeDeptModal(); });
+  document.getElementById("deptClose").addEventListener("click", closeDeptModal);
+  document.getElementById("deptDone").addEventListener("click", closeDeptModal);
+  document.getElementById("deptAdd").addEventListener("click", function(){
+    if(state.readOnly) return;
+    openAddDeptModal();
+  });
+  renderDeptModalIfOpen();
+}
+function openAddDeptModal(onCreated){
+  var defaultColor = PALETTE[Object.keys(state.departments).length % PALETTE.length];
+  var html =
+    '<div class="overlay" id="addDeptOverlay" style="z-index:150;"><div class="modal" style="width:380px;">'+
+    '<div class="modal-hd"><h3>Add department</h3><button class="close-x" id="addDeptClose">✕</button></div>'+
+    '<div class="modal-body">'+
+      '<div class="field"><label>Name</label><input id="adName" placeholder="e.g. Marketing"></div>'+
+      '<div class="field"><label>Color</label><div style="display:flex;align-items:center;gap:10px;">'+
+        '<input type="color" id="adColor" value="'+defaultColor+'" style="width:48px;height:36px;padding:2px;border:1px solid var(--border);border-radius:6px;background:none;cursor:pointer;">'+
+        '<span class="hint" id="adColorHex" style="text-transform:none;">'+defaultColor+'</span>'+
+      '</div>'+
+      '<div class="swatch-row" style="margin-top:8px;">'+
+        PALETTE.map(function(c){ return '<span class="swatch" style="background:'+c+'" data-color="'+c+'"></span>'; }).join("")+
+      '</div></div>'+
+      '<div class="hint" id="adErr" style="color:var(--danger,#c0392b);"></div>'+
+    '</div>'+
+    '<div class="modal-ft"><button class="btn" id="adCancel">Cancel</button><button class="btn primary" id="adSave">Add department</button></div>'+
+    '</div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+  document.getElementById("addDeptOverlay").addEventListener("click", function(e){ if(e.target.id==="addDeptOverlay") closeAddDeptModal(); });
+  document.getElementById("addDeptClose").addEventListener("click", closeAddDeptModal);
+  document.getElementById("adCancel").addEventListener("click", closeAddDeptModal);
+  var colorInput = document.getElementById("adColor");
+  var colorHex = document.getElementById("adColorHex");
+  colorInput.addEventListener("input", function(){ colorHex.textContent = colorInput.value; });
+  document.querySelectorAll('#addDeptOverlay .swatch-row .swatch').forEach(function(sw){
+    sw.addEventListener("click", function(){
+      var c = sw.getAttribute("data-color");
+      colorInput.value = c; colorHex.textContent = c;
+    });
+  });
+  document.getElementById("adName").focus();
+  document.getElementById("adSave").addEventListener("click", function(){
+    var name = document.getElementById("adName").value.trim();
+    var errEl = document.getElementById("adErr");
+    if(!name){ errEl.textContent = "Name is required."; return; }
+    var newDeptId = uid("dept");
+    guardedWrite(function(){ return db.doc("departments/"+newDeptId).set({name:name, color: colorInput.value}); })
+      .then(function(ok){ if(ok){ closeAddDeptModal(); if(onCreated) onCreated(newDeptId); } });
+  });
+}
+function closeAddDeptModal(){ var o=document.getElementById("addDeptOverlay"); if(o) o.remove(); }
+function closeDeptModal(){ deptModalOpen=false; var o=document.getElementById("deptOverlay"); if(o) o.remove(); }
+function renderDeptModalIfOpen(){
+  if(!deptModalOpen) return;
+  var list=document.getElementById("deptList"); if(!list) return;
+  var ids = Object.keys(state.departments).sort(function(a,b){return state.departments[a].name.localeCompare(state.departments[b].name);});
+  if(ids.length===0){ list.innerHTML='<div class="hint">No departments yet.</div>'; return; }
+  list.innerHTML = ids.map(function(id){
+    var d=state.departments[id];
+    var usedCount = Object.values(state.positions).filter(function(p){return p.department===id;}).length;
+    return '<div class="dept-row" data-id="'+id+'">'+
+      '<span class="swatch" style="background:'+d.color+'" data-role="swatchToggle"></span>'+
+      '<input type="text" value="'+esc(d.name)+'" data-role="name">'+
+      '<span class="hint" style="min-width:56px;">'+usedCount+' used</span>'+
+      '<button class="btn small danger" data-role="del">Delete</button>'+
+      '</div>'+
+      '<div class="swatch-row" data-role="palette" style="display:none;padding:0 0 8px 28px;align-items:center;">'+
+      PALETTE.map(function(c){ return '<span class="swatch'+(c===d.color?" active":"")+'" style="background:'+c+'" data-color="'+c+'"></span>'; }).join("")+
+      '<input type="color" data-role="anyColor" value="'+d.color+'" style="width:26px;height:26px;padding:0;border:1px solid var(--border-strong);border-radius:6px;background:none;cursor:pointer;margin-left:4px;" title="Pick any color">'+
+      '</div>';
+  }).join("");
+  ids.forEach(function(id){
+    var row=list.querySelector('.dept-row[data-id="'+id+'"]');
+    var paletteRow = row.nextElementSibling;
+    row.querySelector('[data-role="name"]').disabled=state.readOnly;
+    row.querySelector('[data-role="name"]').addEventListener("input", function(e){
+      debounce("dept_"+id, function(){ guardedWrite(function(){ return db.doc("departments/"+id).update({name:e.target.value}); }); });
+    });
+    row.querySelector('[data-role="swatchToggle"]').addEventListener("click", function(){
+      paletteRow.style.display = paletteRow.style.display==="none" ? "flex":"none";
+    });
+    paletteRow.querySelectorAll(".swatch").forEach(function(sw){
+      sw.addEventListener("click", function(){
+        if(state.readOnly) return;
+        guardedWrite(function(){ return db.doc("departments/"+id).update({color: sw.getAttribute("data-color")}); });
+      });
+    });
+    var anyColorInput = paletteRow.querySelector('[data-role="anyColor"]');
+    anyColorInput.disabled = state.readOnly;
+    anyColorInput.addEventListener("input", function(){
+      debounce("dept_color_"+id, function(){ guardedWrite(function(){ return db.doc("departments/"+id).update({color: anyColorInput.value}); }); }, 150);
+    });
+    var delBtn = row.querySelector('[data-role="del"]');
+    delBtn.disabled = state.readOnly;
+    delBtn.addEventListener("click", function(){
+      var used = Object.values(state.positions).filter(function(p){return p.department===id;}).length;
+      var go = function(){ guardedWrite(function(){ return db.doc("departments/"+id).delete(); }); };
+      if(used>0){
+        showConfirm(used+" position(s) use this department. Delete anyway? They will show as \"No department\".", {title:"Delete department", okLabel:"Delete", danger:true}).then(function(ok){ if(ok) go(); });
+      } else go();
+    });
+  });
+}
+
+/* ---------------- people directory modal ---------------- */
+var peopleModalOpen=false;
+function openPeopleModal(){
+  peopleModalOpen=true;
+  var html =
+    '<div class="overlay" id="peopleOverlay"><div class="modal" style="width:520px;">'+
+    '<div class="modal-hd"><h3>People</h3><button class="close-x" id="peopleClose">✕</button></div>'+
+    '<div class="modal-body" id="peopleList"></div>'+
+    '<div class="modal-ft"><button class="btn primary" id="peopleAdd" style="margin-right:auto;">+ Add person</button><button class="btn" id="peopleDone">Done</button></div>'+
+    '</div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+  document.getElementById("peopleOverlay").addEventListener("click", function(e){ if(e.target.id==="peopleOverlay") closePeopleModal(); });
+  document.getElementById("peopleClose").addEventListener("click", closePeopleModal);
+  document.getElementById("peopleDone").addEventListener("click", closePeopleModal);
+  document.getElementById("peopleAdd").addEventListener("click", function(){
+    if(state.readOnly) return;
+    openAddPersonModal();
+  });
+  renderPeopleModalIfOpen();
+}
+var addPersonPendingFile = null;
+function openAddPersonModal(){
+  addPersonPendingFile = null;
+  var vacant = Object.values(state.positions).filter(function(p){ return !p.personId; })
+    .sort(function(a,b){ return a.title.localeCompare(b.title); });
+  var posOpts = ['<option value="">— none / assign later —</option>'].concat(
+    vacant.map(function(p){ return '<option value="'+p.id+'">'+esc(p.title)+'</option>'; })
+  ).join("");
+  var html =
+    '<div class="overlay" id="addPersonOverlay"><div class="modal" style="width:440px;">'+
+    '<div class="modal-hd"><h3>Add person</h3><button class="close-x" id="addPersonClose">✕</button></div>'+
+    '<div class="modal-body">'+
+      '<div class="field"><label>Headshot</label><div class="headshot-row">'+
+        '<div class="avatar" id="apAvatar" style="width:48px;height:48px;">?</div>'+
+        '<input type="file" accept="image/*" id="apHeadshotFile" style="display:none;">'+
+        '<button class="btn small" id="apUploadBtn" type="button">Upload</button>'+
+      '</div></div>'+
+      '<div class="field"><label>Name</label><input id="apName" placeholder="Full name"></div>'+
+      '<div class="field"><label>Outside affiliation (optional)</label><input id="apAffil" placeholder="e.g. VP Sales, Acme Corp"></div>'+
+      '<div class="field"><label>Assign to position (optional)</label><select id="apPosition">'+posOpts+'</select>'+
+        '<div class="hint">Only vacant positions are listed — you can also assign them later from that position\'s profile.</div></div>'+
+      '<div class="hint" id="apErr" style="color:var(--danger,#c0392b);"></div>'+
+    '</div>'+
+    '<div class="modal-ft"><button class="btn" id="apCancel">Cancel</button><button class="btn primary" id="apSave">Add person</button></div>'+
+    '</div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+  document.getElementById("addPersonOverlay").addEventListener("click", function(e){ if(e.target.id==="addPersonOverlay") closeAddPersonModal(); });
+  document.getElementById("addPersonClose").addEventListener("click", closeAddPersonModal);
+  document.getElementById("apCancel").addEventListener("click", closeAddPersonModal);
+  var upBtn = document.getElementById("apUploadBtn");
+  upBtn.disabled = !assetsCap;
+  upBtn.addEventListener("click", function(){ document.getElementById("apHeadshotFile").click(); });
+  document.getElementById("apHeadshotFile").addEventListener("change", function(e){
+    var f = e.target.files[0]; if(!f) return;
+    addPersonPendingFile = f;
+    var reader = new FileReader();
+    reader.onload = function(ev){ document.getElementById("apAvatar").innerHTML = '<img src="'+ev.target.result+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">'; };
+    reader.readAsDataURL(f);
+  });
+  document.getElementById("apName").focus();
+  document.getElementById("apSave").addEventListener("click", function(){
+    var name = document.getElementById("apName").value.trim();
+    var errEl = document.getElementById("apErr");
+    if(!name){ errEl.textContent = "Name is required."; return; }
+    var existingId = findPersonByName(name);
+    if(existingId){ errEl.textContent = '"'+state.people[existingId].name+'" already has a profile — use the People list to edit them instead.'; return; }
+    var affil = document.getElementById("apAffil").value.trim();
+    var posId = document.getElementById("apPosition").value;
+    var saveBtn = document.getElementById("apSave"); saveBtn.disabled = true; saveBtn.textContent = "Adding…";
+    var pid = uid("person");
+    var uploadStep = (addPersonPendingFile && assetsCap) ? assetsCap.upload(addPersonPendingFile) : Promise.resolve(null);
+    uploadStep.then(function(res){
+      return guardedWrite(function(){
+        return db.doc("people/"+pid).set({name:name, affiliation:affil, headshotId: res? res.id : null})
+          .then(function(){ return posId ? db.doc("positions/"+posId).update({personId:pid}) : null; });
+      });
+    }).then(function(ok){
+      if(ok){ closeAddPersonModal(); toast('Added "'+name+'".'); }
+      else { saveBtn.disabled=false; saveBtn.textContent="Add person"; }
+    }).catch(function(err){
+      errEl.textContent = "Upload failed: "+(err&&err.message||"try a smaller image");
+      saveBtn.disabled=false; saveBtn.textContent="Add person";
+    });
+  });
+}
+function closeAddPersonModal(){ addPersonPendingFile=null; var o=document.getElementById("addPersonOverlay"); if(o) o.remove(); }
+function closePeopleModal(){ peopleModalOpen=false; var o=document.getElementById("peopleOverlay"); if(o) o.remove(); }
+function renderPeopleModalIfOpen(){
+  if(!peopleModalOpen) return;
+  var list=document.getElementById("peopleList"); if(!list) return;
+  var ids = Object.keys(state.people).sort(function(a,b){return state.people[a].name.localeCompare(state.people[b].name);});
+  if(ids.length===0){ list.innerHTML='<div class="hint">No people yet — add someone, then assign them to a position from its profile panel.</div>'; return; }
+  list.innerHTML = ids.map(function(id){
+    var person = state.people[id];
+    var positions = Object.values(state.positions).filter(function(p){ return p.personId===id; });
+    return '<div class="version-row" data-id="'+id+'" style="align-items:flex-start;">'+
+      '<div class="avatar" style="width:38px;height:38px;flex:none;">'+(person.headshotId? '<img src="/_blob/'+person.headshotId+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">' : esc(initials(person.name)))+'</div>'+
+      '<div class="version-info">'+
+        '<input type="text" data-role="name" value="'+esc(person.name)+'" style="font-weight:600;font-size:13px;width:100%;margin-bottom:3px;">'+
+        '<input type="text" data-role="affil" placeholder="Outside affiliation (optional)" value="'+esc(person.affiliation||"")+'" style="width:100%;font-size:12px;margin-bottom:4px;">'+
+        (positions.length?
+          '<div class="ts">Holds: '+positions.map(function(p){ return '<a data-jump="'+p.id+'" style="color:var(--accent);cursor:pointer;">'+esc(p.title)+'</a>'; }).join(", ")+'</div>'
+          : '<div class="ts">Not currently assigned to a position</div>') +
+      '</div>'+
+      '<button class="btn small danger" data-role="del">Delete</button>'+
+    '</div>';
+  }).join("");
+  ids.forEach(function(id){
+    var row=list.querySelector('.version-row[data-id="'+id+'"]');
+    var nameInput=row.querySelector('[data-role="name"]'), affilInput=row.querySelector('[data-role="affil"]');
+    nameInput.disabled = state.readOnly; affilInput.disabled = state.readOnly;
+    nameInput.addEventListener("input", function(){
+      debounce("person_name_"+id, function(){ guardedWrite(function(){ return db.doc("people/"+id).update({name:nameInput.value}); }); });
+    });
+    affilInput.addEventListener("input", function(){
+      debounce("person_affil_"+id, function(){ guardedWrite(function(){ return db.doc("people/"+id).update({affiliation:affilInput.value}); }); });
+    });
+    row.querySelectorAll("[data-jump]").forEach(function(a){
+      a.addEventListener("click", function(){ closePeopleModal(); openProfile(a.getAttribute("data-jump")); });
+    });
+    var delBtn = row.querySelector('[data-role="del"]');
+    var usedCount = Object.values(state.positions).filter(function(p){return p.personId===id;}).length;
+    delBtn.disabled = state.readOnly;
+    delBtn.addEventListener("click", function(){
+      var msg = "Delete this person's profile? This can't be undone."+
+        (usedCount>0? (" "+usedCount+" position(s) currently show them — those position(s) will become vacant, but stay in the chart.") : "");
+      showConfirm(msg, {title:"Delete person", okLabel:"Delete", danger:true}).then(function(ok){
+        if(!ok) return;
+        var writes = Object.values(state.positions).filter(function(p){return p.personId===id;})
+          .map(function(p){ return db.doc("positions/"+p.id).update({personId:null}); });
+        writes.push(db.doc("people/"+id).delete());
+        return guardedWrite(function(){ return Promise.all(writes); }).then(function(saved){
+          if(saved) toast("Person deleted.");
+        });
+      });
+    });
+  });
+}
+
+/* ---------------- version history modal ---------------- */
+var versionsModalOpen=false;
+function openVersionsModal(){
+  versionsModalOpen=true;
+  var html =
+    '<div class="overlay" id="verOverlay"><div class="modal">'+
+    '<div class="modal-hd"><h3>Version history</h3><button class="close-x" id="verClose">✕</button></div>'+
+    '<div class="modal-body" id="verList"></div>'+
+    '<div class="modal-ft"><button class="btn primary" id="verSave" style="margin-right:auto;">Save current as version</button><button class="btn" id="verDone">Close</button></div>'+
+    '</div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+  document.getElementById("verOverlay").addEventListener("click", function(e){ if(e.target.id==="verOverlay") closeVersionsModal(); });
+  document.getElementById("verClose").addEventListener("click", closeVersionsModal);
+  document.getElementById("verDone").addEventListener("click", closeVersionsModal);
+  var saveBtn=document.getElementById("verSave"); saveBtn.disabled=state.readOnly;
+  saveBtn.addEventListener("click", saveVersion);
+  renderVersionsModalIfOpen();
+}
+function closeVersionsModal(){ versionsModalOpen=false; var o=document.getElementById("verOverlay"); if(o) o.remove(); }
+function renderVersionsModalIfOpen(){
+  if(!versionsModalOpen) return;
+  var list=document.getElementById("verList"); if(!list) return;
+  if(state.versions.length===0){ list.innerHTML='<div class="hint">No saved versions yet. Save one to create a restore point.</div>'; return; }
+  list.innerHTML = state.versions.map(function(v){
+    var d = v.createdAt ? new Date(v.createdAt) : null;
+    var ts = d ? d.toLocaleString() : "";
+    return '<div class="version-row" data-id="'+v.id+'">'+
+      '<div class="version-info"><div class="lbl">'+esc(v.label||"Untitled version")+'</div><div class="ts">'+esc(ts)+' · '+(v.positions?v.positions.length:0)+' positions</div></div>'+
+      '<button class="btn small" data-role="restore">Restore</button>'+
+      '<button class="btn small danger" data-role="del">Delete</button>'+
+      '</div>';
+  }).join("");
+  list.querySelectorAll(".version-row").forEach(function(row){
+    var id=row.getAttribute("data-id");
+    var v = state.versions.find(function(x){return x.id===id;});
+    row.querySelector('[data-role="restore"]').disabled = state.readOnly;
+    row.querySelector('[data-role="restore"]').addEventListener("click", function(){ restoreVersion(v); });
+    row.querySelector('[data-role="del"]').disabled = state.readOnly;
+    row.querySelector('[data-role="del"]').addEventListener("click", function(){
+      showConfirm("Delete this saved version?", {title:"Delete version", okLabel:"Delete", danger:true}).then(function(ok){
+        if(!ok) return;
+        guardedWrite(function(){ return db.doc("versions/"+id).delete(); });
+      });
+    });
+  });
+}
+function saveVersion(){
+  showPrompt("Name this version (e.g. \"Q1 2026 reorg\"):", new Date().toLocaleDateString()).then(function(label){
+    if(label==null) return;
+    var snapshotPositions = Object.values(state.positions);
+    var snapshotDepts = Object.values(state.departments);
+    var snapshotPeople = Object.values(state.people);
+    var id = uid("ver");
+    guardedWrite(function(){
+      return db.doc("versions/"+id).set({label:label, createdAt: new Date().toISOString(), positions: snapshotPositions, departments: snapshotDepts, people: snapshotPeople});
+    }).then(function(){ toast("Version saved."); });
+  });
+}
+function restoreVersion(v){
+  showConfirm('Restore "'+(v.label||"this version")+'"? This will overwrite the current chart, departments and people.', {title:"Restore version", okLabel:"Restore", danger:true}).then(function(ok){
+    if(!ok) return;
+    var writes = [];
+    (v.departments||[]).forEach(function(d){ writes.push(db.doc("departments/"+d.id).set({name:d.name,color:d.color})); });
+    (v.people||[]).forEach(function(person){ writes.push(db.doc("people/"+person.id).set({name:person.name,affiliation:person.affiliation||"",headshotId:person.headshotId||null})); });
+    (v.positions||[]).forEach(function(p){ writes.push(db.doc("positions/"+p.id).set(p)); });
+    var keepIds = {}; (v.positions||[]).forEach(function(p){keepIds[p.id]=true;});
+    Object.keys(state.positions).forEach(function(id){ if(!keepIds[id]) writes.push(db.doc("positions/"+id).delete()); });
+    var keepDeptIds={}; (v.departments||[]).forEach(function(d){keepDeptIds[d.id]=true;});
+    Object.keys(state.departments).forEach(function(id){ if(!keepDeptIds[id]) writes.push(db.doc("departments/"+id).delete()); });
+    var keepPeopleIds={}; (v.people||[]).forEach(function(person){keepPeopleIds[person.id]=true;});
+    Object.keys(state.people).forEach(function(id){ if(!keepPeopleIds[id]) writes.push(db.doc("people/"+id).delete()); });
+    guardedWrite(function(){ return Promise.all(writes); }).then(function(){ toast("Version restored."); closeVersionsModal(); });
+  });
+}
+
+/* ---------------- export ----------------
+   Exports render the full chart at 100% zoom (never the on-screen zoom
+   level) so results are consistent regardless of how far the user has
+   zoomed/panned. The raster size is clamped so it stays within the
+   canvas-size limits mobile Safari/Chrome enforce (exports could
+   silently fail or come back blank on phones for a large chart
+   otherwise). Both exports always produce a single page/image with the
+   entire chart visible: PDF picks the smallest standard page size (up
+   to a large-format print size) that fits the whole chart at a
+   reasonable scale, rather than ever splitting it across pages. */
+function computeSafeExportScale(contentW, contentH){
+  var desired = 2; // supersample for crisp text/edges
+  var maxSide = 4000; // stay well under mobile browser canvas-size limits
+  var maxArea = 15000000;
+  var scale = desired;
+  if(contentW>0 && contentH>0){
+    scale = Math.min(scale, maxSide/contentW, maxSide/contentH, Math.sqrt(maxArea/(contentW*contentH)));
+  }
+  return Math.max(scale, 0.5);
+}
+function withExportClone(fn){
+  var canvas=document.getElementById("canvas");
+  var prevSelected = state.selectedId; state.selectedId=null; render();
+  var prevScale = state.scale; state.scale=1; canvas.style.transform="scale(1)";
+  render();
+  var contentW = canvas.scrollWidth, contentH = canvas.scrollHeight;
+  var safeScale = computeSafeExportScale(contentW, contentH);
+  // #canvas normally sits inside a scrollable, overflow:auto wrapper (so
+  // the user can pan). html2canvas clips its capture to a scrollable
+  // ancestor's current viewport/scroll position, so capturing #canvas
+  // directly only grabbed whatever part happened to be scrolled into
+  // view. Instead, clone the whole chart into a detached, unclipped host
+  // appended straight to <body> and capture that clone — its layout and
+  // CSS classes match the original exactly, but nothing constrains it.
+  var host = document.createElement("div");
+  host.style.cssText = "position:fixed;left:-100000px;top:0;overflow:visible;pointer-events:none;";
+  var clone = canvas.cloneNode(true);
+  clone.style.transform = "scale(1)";
+  host.appendChild(clone);
+  document.body.appendChild(host);
+  function cleanup(){ if(host.parentNode) host.parentNode.removeChild(host); state.scale=prevScale; state.selectedId=prevSelected; render(); }
+  return html2canvas(clone,{backgroundColor: getComputedStyle(document.body).getPropertyValue('--bg')||"#ffffff", scale:safeScale, width:contentW, height:contentH, windowWidth:contentW, windowHeight:contentH}).then(function(c){
+    cleanup();
+    return fn(c, contentW, contentH, safeScale);
+  }).catch(function(err){
+    cleanup();
+    throw err;
+  });
+}
+function exportImage(){
+  if(!downloadsCap){ toast("Downloads aren't available in this preview."); return; }
+  withExportClone(function(canvasEl){
+    canvasEl.toBlob(function(blob){
+      if(!blob){ toast("Export failed — try again."); return; }
+      downloadsCap.save({filename:(state.config.orgTitle||"org-chart").replace(/[^\w\- ]/g,"")+".png", data:blob})
+        .catch(function(e){ if(e && e.code!=="declined") toast("Couldn't save the image."); });
+    }, "image/png");
+  }).catch(function(){ toast("Export failed. Try again, or export a smaller department view."); });
+}
+// Standard page sizes (short side x long side, inches) to pick from so a
+// big chart still gets a decent scale while staying on one single page.
+var PDF_PAGE_SIZES_IN = [[8.5,11],[11,17],[17,22],[22,34],[34,44]];
+var PDF_DPI = 96, PDF_MARGIN = 36, PDF_TARGET_FIT = 0.6;
+function exportPdf(){
+  if(!downloadsCap){ toast("Downloads aren't available in this preview."); return; }
+  withExportClone(function(canvasEl, contentW, contentH){
+    var jsPDFCtor = window.jspdf.jsPDF;
+    var landscape = contentW >= contentH;
+    var chosen = null;
+    for(var i=0;i<PDF_PAGE_SIZES_IN.length;i++){
+      var shortIn = PDF_PAGE_SIZES_IN[i][0], longIn = PDF_PAGE_SIZES_IN[i][1];
+      var pw = (landscape? longIn : shortIn) * PDF_DPI;
+      var ph = (landscape? shortIn : longIn) * PDF_DPI;
+      var fit = Math.min((pw-PDF_MARGIN*2)/contentW, (ph-PDF_MARGIN*2)/contentH, 1);
+      chosen = {pageW:pw, pageH:ph, fitScale:fit};
+      if(fit >= PDF_TARGET_FIT || i===PDF_PAGE_SIZES_IN.length-1) break;
+    }
+    var pageW = chosen.pageW, pageH = chosen.pageH, fitScale = chosen.fitScale;
+    var pdf = new jsPDFCtor({orientation: landscape?"landscape":"portrait", unit:"px", format:[pageW,pageH]});
+    var drawW = contentW*fitScale, drawH = contentH*fitScale;
+    var x = (pageW-drawW)/2, y = (pageH-drawH)/2;
+    pdf.addImage(canvasEl.toDataURL("image/png"), "PNG", x, y, drawW, drawH);
+    var blob = pdf.output("blob");
+    downloadsCap.save({filename:(state.config.orgTitle||"org-chart").replace(/[^\w\- ]/g,"")+".pdf", data:blob})
+      .catch(function(e){ if(e && e.code!=="declined") toast("Couldn't save the PDF."); });
+  }).catch(function(){ toast("Export failed. Try again, or export a smaller department view."); });
+}
+
+/* ---------------- zoom / search / header wiring ---------------- */
+function setScale(s){ state.scale=Math.max(.3,Math.min(2,s)); render(); }
+
+document.getElementById("zoomIn").addEventListener("click", function(){ setScale(state.scale+0.1); });
+document.getElementById("zoomOut").addEventListener("click", function(){ setScale(state.scale-0.1); });
+document.getElementById("zoomReset").addEventListener("click", zoomFitAll);
+
+document.getElementById("viewSelect").addEventListener("change", function(e){ state.deptFilter=e.target.value; state.multiSelect.clear(); closeProfile(); render(); });
+document.getElementById("btnAddRoot").addEventListener("click", function(){ addPosition(null); });
+document.getElementById("btnAddFirst").addEventListener("click", function(){ addPosition(null); });
+document.getElementById("btnDepts").addEventListener("click", openDeptModal);
+document.getElementById("btnPeople").addEventListener("click", openPeopleModal);
+document.getElementById("btnVersions").addEventListener("click", openVersionsModal);
+document.getElementById("btnExportPng").addEventListener("click", exportImage);
+document.getElementById("btnExportPdf").addEventListener("click", exportPdf);
+document.getElementById("closePanel").addEventListener("click", closeProfile);
+
+document.getElementById("orgTitleInput").addEventListener("input", function(e){
+  debounce("orgTitle", function(){ guardedWrite(function(){ return db.doc("meta/config").update({orgTitle:e.target.value}); }); });
+});
+
+document.getElementById("searchInput").addEventListener("change", function(e){
+  var val = e.target.value;
+  var match = Object.values(state.positions).find(function(p){
+    var person = personOf(p);
+    var label = p.title+(person?(" — "+person.name):"");
+    return label===val;
+  });
+  if(match){ state.deptFilter="all"; document.getElementById("viewSelect").value="all"; render(); openProfile(match.id);
+    var el=nodeEls[match.id]; if(el) el.scrollIntoView({behavior:"smooth", block:"center", inline:"center"});
+  }
+  e.target.value="";
+});
+
+/* ---------------- click-drag panning on empty canvas ---------------- */
+(function(){
+  var wrap = document.getElementById("canvasWrap");
+  var panning=false, startX=0, startY=0, startLeft=0, startTop=0;
+  wrap.addEventListener("pointerdown", function(ev){
+    if(ev.button!==0) return;
+    // only pan when the click starts on empty canvas, not on a node or the zoom control
+    if(ev.target.closest(".node") || ev.target.closest(".zoom-ctrl") || ev.target.closest(".empty-state")) return;
+    if(!ev.ctrlKey && !ev.metaKey && state.multiSelect.size){ state.multiSelect.clear(); render(); }
+    panning=true;
+    startX=ev.clientX; startY=ev.clientY;
+    startLeft=wrap.scrollLeft; startTop=wrap.scrollTop;
+    wrap.classList.add("panning");
+    wrap.setPointerCapture(ev.pointerId);
+  });
+  wrap.addEventListener("pointermove", function(ev){
+    if(!panning) return;
+    wrap.scrollLeft = startLeft - (ev.clientX-startX);
+    wrap.scrollTop = startTop - (ev.clientY-startY);
+  });
+  function endPan(ev){
+    if(!panning) return;
+    panning=false;
+    wrap.classList.remove("panning");
+  }
+  wrap.addEventListener("pointerup", endPan);
+  wrap.addEventListener("pointercancel", endPan);
+  wrap.addEventListener("pointerleave", endPan);
+})();
+
+/* wheel zooms the chart (any scroll, not just ctrl/cmd); shift+wheel or a horizontal
+   wheel gesture still pans, since that's what trackpads send for sideways scroll */
+document.getElementById("canvasWrap").addEventListener("wheel", function(e){
+  if(e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)){
+    return; // let horizontal / shift-scroll pan normally
+  }
+  e.preventDefault();
+  var wrap = e.currentTarget;
+  var rect = wrap.getBoundingClientRect();
+  var px = e.clientX - rect.left + wrap.scrollLeft;
+  var py = e.clientY - rect.top + wrap.scrollTop;
+  var oldScale = state.scale;
+  var delta = e.deltaY<0 ? 0.08 : -0.08;
+  var newScale = Math.max(.3, Math.min(2, oldScale+delta));
+  if(newScale===oldScale) return;
+  // keep the point under the cursor stationary while zooming
+  var ratio = newScale/oldScale;
+  state.scale = newScale;
+  render();
+  wrap.scrollLeft = px*ratio - (e.clientX-rect.left);
+  wrap.scrollTop = py*ratio - (e.clientY-rect.top);
+}, {passive:false});
+
+initCapabilities();
+render();
+})();
+</script>
