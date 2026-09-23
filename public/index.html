@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kenwood Platform</title>
+<link rel="stylesheet" href="assets/platform.css">
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--k-bg);color:var(--k-text);font:14px/1.5 var(--k-font);min-height:100vh;}
+  main{max-width:1040px;margin:0 auto;padding:32px 16px 48px;}
+  h1{font-size:24px;margin:0 0 4px;letter-spacing:-.01em;}
+  .sub{color:var(--k-text-dim);margin:0 0 28px;}
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--k-text-faint);margin:32px 0 12px;font-weight:700;}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;}
+  .tile{position:relative;display:flex;flex-direction:column;gap:6px;background:var(--k-panel);border:1px solid var(--k-border);border-radius:12px;padding:18px;box-shadow:var(--k-shadow);color:inherit;text-decoration:none;min-height:150px;transition:border-color .12s,transform .12s;}
+  a.tile:hover{border-color:var(--k-accent);transform:translateY(-1px);}
+  .tile .icon{font-size:26px;line-height:1;}
+  .tile .name{font-weight:700;font-size:15.5px;margin-top:6px;}
+  .tile .desc{color:var(--k-text-dim);font-size:13px;flex:1;}
+  .tile .foot{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--k-text-faint);}
+  .pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:var(--k-border);color:var(--k-text-dim);}
+  .pill.live{background:color-mix(in srgb,var(--k-ok) 16%,transparent);color:var(--k-ok);}
+  .tile.muted{box-shadow:none;background:transparent;border-style:dashed;}
+  .tile.muted .name,.tile.muted .icon{opacity:.75;}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;}
+  .chip{background:var(--k-panel);border:1px solid var(--k-border);border-radius:20px;padding:5px 12px;font-size:13px;color:var(--k-text-dim);}
+  .empty{color:var(--k-text-dim);background:var(--k-panel);border:1px dashed var(--k-border-strong);border-radius:12px;padding:20px;}
+</style>
+</head>
+<body>
+<main id="main" hidden>
+  <h1 id="hello">Welcome</h1>
+  <p class="sub">Kenwood's internal tools, all under one sign-in.</p>
+  <div class="tiles" id="tiles"></div>
+  <h2>Divisions</h2>
+  <div class="chips" id="divisions"></div>
+</main>
+<script type="module">
+import { startPage, db, fs, esc, roleFor, rank, ROLE_LABELS } from "./assets/platform.js";
+
+const ctx = await startPage({ title: "" });
+const first = (ctx.user.displayName || "").split(" ")[0];
+document.getElementById("hello").textContent = first ? "Welcome, " + first : "Welcome";
+
+const mods = Object.values(ctx.modules).sort((a, b) => (a.order || 0) - (b.order || 0));
+const tiles = mods.map((m) => {
+  const role = roleFor(m.id, ctx);
+  const live = m.status === "live" && m.path;
+  const canOpen = live && rank(role) >= rank("viewer");
+  const foot = live
+    ? (canOpen ? '<span class="pill live">Open</span><span>' + esc(ROLE_LABELS[role]) + "</span>"
+               : '<span class="pill">No access</span><span>Ask a platform admin</span>')
+    : '<span class="pill">Coming soon</span>';
+  const inner = '<div class="icon">' + esc(m.icon || "▣") + '</div><div class="name">' + esc(m.name) + "</div>" +
+    '<div class="desc">' + esc(m.description || "") + '</div><div class="foot">' + foot + "</div>";
+  return canOpen
+    ? '<a class="tile" href="' + esc(m.path) + '">' + inner + "</a>"
+    : '<div class="tile muted">' + inner + "</div>";
+});
+if (ctx.isPlatformAdmin) {
+  tiles.push('<a class="tile" href="admin/"><div class="icon">🔑</div><div class="name">People &amp; access</div>' +
+    '<div class="desc">Choose who can view or edit each tool, and add platform admins.</div>' +
+    '<div class="foot"><span class="pill live">Admin</span></div></a>');
+}
+document.getElementById("tiles").innerHTML = tiles.length ? tiles.join("")
+  : '<div class="empty">No tools are set up yet. A platform admin opening this page sets them up automatically.</div>';
+
+try {
+  const snap = await fs.getDocs(fs.query(fs.collection(db, "divisions"), fs.orderBy("order")));
+  document.getElementById("divisions").innerHTML = snap.docs.map((d) => '<span class="chip">' + esc(d.data().name) + "</span>").join("");
+} catch (e) { document.getElementById("divisions").textContent = ""; }
+document.getElementById("main").hidden = false;
+</script>
+</body>
+</html>

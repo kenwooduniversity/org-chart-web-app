@@ -1,0 +1,109 @@
+rules_version = '2';
+
+// Kenwood internal platform — Firestore security rules.
+//
+// Access model (see docs/DATA_MODEL.md):
+//   * Only signed-in Google accounts with a verified @kenwoodusa.org email get in at all.
+//   * Each module has its own role per person: none < viewer < editor < admin.
+//     A person's role comes from members/{email}.roles[moduleId]; if they have no
+//     entry, the module's defaultRole (modules/{moduleId}.defaultRole) applies.
+//   * Platform admins (members/{email}.platformAdmin, or an address in owners())
+//     are admin on every module and manage members/modules/divisions.
+//   * members/{email}.disabled = true locks a person out of everything.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- identity ----------
+    function owners() {
+      // Bootstrap owners: always platform admins, even before any members doc exists.
+      return ['connect@kenwoodusa.org'];
+    }
+    function signedIn() { return request.auth != null; }
+    function email() { return request.auth.token.email.lower(); }
+    function isKenwood() {
+      return signedIn()
+        && request.auth.token.email is string
+        && request.auth.token.email_verified == true
+        && email().matches('^[^@]+@kenwoodusa[.]org$');
+    }
+
+    // ---------- membership ----------
+    function memberPath() { return /databases/$(database)/documents/members/$(email()); }
+    function hasMember() { return exists(memberPath()); }
+    function member() { return get(memberPath()).data; }
+    function isDisabled() { return hasMember() && member().get('disabled', false) == true; }
+    function isActive() { return isKenwood() && !isDisabled(); }
+    function isPlatformAdmin() {
+      return isActive()
+        && (email() in owners() || (hasMember() && member().get('platformAdmin', false) == true));
+    }
+
+    // ---------- per-module roles ----------
+    function moduleDefaultRole(m) {
+      return exists(/databases/$(database)/documents/modules/$(m))
+        ? get(/databases/$(database)/documents/modules/$(m)).data.get('defaultRole', 'none')
+        : 'none';
+    }
+    function roleIn(m) {
+      return isPlatformAdmin() ? 'admin'
+        : (hasMember() && member().get('roles', {}).get(m, null) != null)
+          ? member().roles[m]
+          : moduleDefaultRole(m);
+    }
+    function canRead(m)  { return isActive() && roleIn(m) in ['viewer', 'editor', 'admin']; }
+    function canWrite(m) { return isActive() && roleIn(m) in ['editor', 'admin']; }
+    function canAdmin(m) { return isActive() && roleIn(m) == 'admin'; }
+
+    // ---------- platform collections ----------
+
+    // One doc per person, keyed by lowercase email. Admins manage roles; people may
+    // create/refresh their own profile fields but never grant themselves access.
+    match /members/{memberEmail} {
+      function profileOnly(keys) {
+        return keys.hasOnly(['email', 'displayName', 'photoURL', 'lastSignInAt']);
+      }
+      allow read: if isKenwood() && (memberEmail == email() || isPlatformAdmin());
+      allow create: if isPlatformAdmin()
+        || (isKenwood() && memberEmail == email()
+            && profileOnly(request.resource.data.keys()));
+      allow update: if isPlatformAdmin()
+        || (isKenwood() && memberEmail == email()
+            && profileOnly(request.resource.data.diff(resource.data).affectedKeys()));
+      allow delete: if isPlatformAdmin();
+    }
+
+    // Module registry: drives the portal tiles and each module's default role.
+    match /modules/{moduleId} {
+      allow read: if isActive();
+      allow write: if isPlatformAdmin();
+    }
+
+    // Shared taxonomy every module can tag data with (mirrors Kenwood's Notion divisions).
+    match /divisions/{divisionId} {
+      allow read: if isActive();
+      allow write: if isPlatformAdmin();
+    }
+
+    // ---------- module: org chart ----------
+    // orgchart/{chartId} holds chart settings; its subcollections hold the data.
+    match /orgchart/{chartId} {
+      allow read: if canRead('orgchart');
+      allow write: if canWrite('orgchart');
+
+      match /{coll}/{docId} {
+        allow read: if canRead('orgchart');
+        allow write: if canWrite('orgchart')
+          && coll in ['positions', 'people', 'departments', 'versions', 'headshots']
+          && (coll != 'headshots' || request.resource == null
+              || (request.resource.data.dataUrl is string
+                  && request.resource.data.dataUrl.size() < 400000));
+      }
+    }
+
+    // ---------- future modules ----------
+    // A task-tracker module would add top-level milestones/, projects/, tasks/
+    // collections guarded by canRead('tracker') / canWrite('tracker') — see
+    // docs/DATA_MODEL.md. Anything not matched above is denied.
+  }
+}

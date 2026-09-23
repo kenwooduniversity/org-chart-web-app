@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>People &amp; Access</title>
+<link rel="stylesheet" href="../assets/platform.css">
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--k-bg);color:var(--k-text);font:14px/1.5 var(--k-font);min-height:100vh;}
+  main{max-width:1100px;margin:0 auto;padding:28px 16px 48px;}
+  h1{font-size:22px;margin:0 0 4px;}
+  .sub{color:var(--k-text-dim);margin:0 0 22px;max-width:720px;}
+  h2{font-size:15px;margin:30px 0 10px;}
+  .card{background:var(--k-panel);border:1px solid var(--k-border);border-radius:12px;box-shadow:var(--k-shadow);overflow:hidden;}
+  .scroll{overflow-x:auto;}
+  table{border-collapse:collapse;width:100%;min-width:640px;}
+  th,td{padding:10px 12px;border-bottom:1px solid var(--k-border);text-align:left;vertical-align:middle;font-size:13px;}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--k-text-faint);font-weight:700;background:color-mix(in srgb,var(--k-border) 35%,transparent);}
+  tr:last-child td{border-bottom:none;}
+  .who b{display:block;font-weight:600;}
+  .who span{color:var(--k-text-faint);font-size:12px;}
+  select,input[type=email]{font:inherit;color:var(--k-text);background:var(--k-panel);border:1px solid var(--k-border-strong);border-radius:7px;padding:5px 8px;}
+  select:disabled,input:disabled{opacity:.55;}
+  .btn{font:inherit;background:var(--k-panel);color:var(--k-text);border:1px solid var(--k-border-strong);border-radius:7px;padding:6px 12px;cursor:pointer;}
+  .btn:hover{border-color:var(--k-accent);}
+  .btn.primary{background:var(--k-accent);color:var(--k-accent-text);border-color:var(--k-accent);font-weight:600;}
+  .btn.danger{color:var(--k-danger);}
+  .add{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:14px;border-bottom:1px solid var(--k-border);}
+  .add input{flex:1;min-width:220px;}
+  .note{font-size:12px;color:var(--k-text-faint);}
+  .pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:var(--k-border);color:var(--k-text-dim);}
+  .off td{opacity:.55;}
+  .msg{min-height:1.2em;font-size:13px;color:var(--k-danger);padding:0 14px 10px;}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--k-text);color:var(--k-bg);padding:8px 14px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;}
+  .toast.show{opacity:1;}
+</style>
+</head>
+<body>
+<main id="main" hidden>
+  <h1>People &amp; access</h1>
+  <p class="sub">Everyone with a verified @kenwoodusa.org Google account can sign in. What they can do in each tool is set here: <b>Viewer</b> can look, <b>Editor</b> can change data, <b>Admin</b> can also import and restore. "Default" uses the tool's default below. Changes apply immediately and are enforced by the database's security rules.</p>
+
+  <div class="card">
+    <div class="add">
+      <input type="email" id="newEmail" placeholder="name@kenwoodusa.org" autocomplete="off">
+      <button class="btn primary" id="addBtn">Add person</button>
+      <span class="note">You can add people before they've ever signed in.</span>
+    </div>
+    <div class="msg" id="addMsg"></div>
+    <div class="scroll"><table id="people"></table></div>
+  </div>
+
+  <h2>Tools</h2>
+  <div class="card"><div class="scroll"><table id="modules"></table></div></div>
+  <p class="note">The default role applies to every Kenwood account that doesn't have its own setting above. "Coming soon" tools appear on the home page but can't be opened.</p>
+</main>
+<div class="toast" id="toast"></div>
+<script type="module">
+import { startPage, db, fs, esc, ROLE_LABELS, OWNERS, normEmail, isKenwoodEmail } from "../assets/platform.js";
+
+const ctx = await startPage({ title: "People & access", adminOnly: true });
+const $ = (id) => document.getElementById(id);
+let members = {}, modules = {};
+
+function toast(m) { const t = $("toast"); t.textContent = m; t.classList.add("show"); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("show"), 2200); }
+async function save(fn, okMsg) {
+  try { await fn(); if (okMsg) toast(okMsg); }
+  catch (e) { console.warn(e); toast("Couldn't save: " + (e.code || e.message)); render(); }
+}
+const mods = () => Object.values(modules).sort((a, b) => (a.order || 0) - (b.order || 0));
+const when = (ms) => ms ? new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "Never";
+
+function render() {
+  const ms = mods();
+  const rows = Object.entries(members).sort((a, b) => a[0].localeCompare(b[0])).map(([email, m]) => {
+    const isOwner = OWNERS.includes(email), self = email === ctx.email;
+    const cells = ms.map((mod) => {
+      if (isOwner || m.platformAdmin) return '<td><span class="note">Admin (all tools)</span></td>';
+      const cur = (m.roles && m.roles[mod.id]) || "";
+      const opts = ['<option value="">Default (' + esc(ROLE_LABELS[mod.defaultRole || "none"]) + ")</option>"]
+        .concat(["none", "viewer", "editor", "admin"].map((r) => '<option value="' + r + '"' + (cur === r ? " selected" : "") + ">" + ROLE_LABELS[r] + "</option>"));
+      return '<td><select data-role="' + esc(mod.id) + '"' + (isOwner || m.platformAdmin ? " disabled title=\"Platform admins have full access\"" : "") + ">" + opts.join("") + "</select></td>";
+    }).join("");
+    return '<tr data-email="' + esc(email) + '" class="' + (m.disabled ? "off" : "") + '">' +
+      '<td class="who"><b>' + esc(m.displayName || email.split("@")[0]) + "</b><span>" + esc(email) + " · last sign-in " + esc(when(m.lastSignInAt)) + "</span></td>" +
+      cells +
+      "<td>" + (isOwner ? '<span class="pill">Owner</span>'
+        : '<label><input type="checkbox" data-admin' + (m.platformAdmin ? " checked" : "") + (self ? " disabled" : "") + "> Admin</label>") + "</td>" +
+      "<td>" + (isOwner || self ? "" : '<label><input type="checkbox" data-disabled' + (m.disabled ? " checked" : "") + "> Turned off</label>") + "</td>" +
+      "<td>" + (isOwner || self ? "" : '<button class="btn danger" data-remove>Remove</button>') + "</td></tr>";
+  });
+  $("people").innerHTML = "<thead><tr><th>Person</th>" + ms.map((m) => "<th>" + esc(m.name) + "</th>").join("") +
+    "<th>Platform</th><th>Access</th><th></th></tr></thead><tbody>" + rows.join("") + "</tbody>";
+
+  $("modules").innerHTML = "<thead><tr><th>Tool</th><th>Status</th><th>Default role for Kenwood accounts</th></tr></thead><tbody>" +
+    ms.map((m) => '<tr data-module="' + esc(m.id) + '"><td class="who"><b>' + esc((m.icon || "") + " " + m.name) + "</b><span>" + esc(m.description || "") + "</span></td>" +
+      '<td><select data-status>' + [["live", "Live"], ["planned", "Coming soon"], ["hidden", "Hidden"]]
+        .map(([v, l]) => '<option value="' + v + '"' + (m.status === v ? " selected" : "") + (v === "live" && !m.path ? " disabled" : "") + ">" + l + "</option>").join("") + "</select></td>" +
+      '<td><select data-default>' + ["none", "viewer", "editor"].map((r) => '<option value="' + r + '"' + ((m.defaultRole || "none") === r ? " selected" : "") + ">" + ROLE_LABELS[r] + "</option>").join("") + "</select></td></tr>").join("") +
+    "</tbody>";
+}
+
+$("people").addEventListener("change", (e) => {
+  const tr = e.target.closest("tr[data-email]"); if (!tr) return;
+  const ref = fs.doc(db, "members", tr.dataset.email);
+  if (e.target.dataset.role) {
+    const v = e.target.value;
+    save(() => fs.setDoc(ref, { roles: { [e.target.dataset.role]: v || fs.deleteField() } }, { merge: true }), "Access updated");
+  } else if ("admin" in e.target.dataset) {
+    save(() => fs.setDoc(ref, { platformAdmin: e.target.checked }, { merge: true }), e.target.checked ? "Now a platform admin" : "Admin removed");
+  } else if ("disabled" in e.target.dataset) {
+    save(() => fs.setDoc(ref, { disabled: e.target.checked }, { merge: true }), e.target.checked ? "Access turned off" : "Access turned back on");
+  }
+});
+$("people").addEventListener("click", (e) => {
+  if (!e.target.matches("[data-remove]")) return;
+  const email = e.target.closest("tr").dataset.email;
+  if (!confirm("Remove " + email + "? They'll fall back to each tool's default access. To block them completely, use \"Turned off\" instead.")) return;
+  save(() => fs.deleteDoc(fs.doc(db, "members", email)), "Removed");
+});
+$("modules").addEventListener("change", (e) => {
+  const tr = e.target.closest("tr[data-module]"); if (!tr) return;
+  const ref = fs.doc(db, "modules", tr.dataset.module);
+  if ("status" in e.target.dataset) save(() => fs.updateDoc(ref, { status: e.target.value }), "Tool updated");
+  if ("default" in e.target.dataset) save(() => fs.updateDoc(ref, { defaultRole: e.target.value }), "Default updated");
+});
+async function addPerson() {
+  const email = normEmail($("newEmail").value);
+  $("addMsg").textContent = "";
+  if (!isKenwoodEmail(email)) { $("addMsg").textContent = "Enter a full @kenwoodusa.org address."; return; }
+  if (members[email]) { $("addMsg").textContent = email + " is already listed."; return; }
+  await save(() => fs.setDoc(fs.doc(db, "members", email), { email, addedBy: ctx.email, addedAt: Date.now(), roles: {} }, { merge: true }), "Added " + email);
+  $("newEmail").value = "";
+}
+$("addBtn").addEventListener("click", addPerson);
+$("newEmail").addEventListener("keydown", (e) => { if (e.key === "Enter") addPerson(); });
+
+fs.onSnapshot(fs.collection(db, "modules"), (s) => { modules = {}; s.forEach((d) => { modules[d.id] = { id: d.id, ...d.data() }; }); render(); });
+fs.onSnapshot(fs.collection(db, "members"), (s) => { members = {}; s.forEach((d) => { members[d.id] = d.data(); }); render(); });
+$("main").hidden = false;
+</script>
+</body>
+</html>
