@@ -94,7 +94,7 @@ service cloud.firestore {
       match /{coll}/{docId} {
         allow read: if canRead('orgchart');
         allow write: if canWrite('orgchart')
-          && coll in ['positions', 'people', 'departments', 'versions', 'headshots']
+          && coll in ['positions', 'people', 'departments', 'versions', 'headshots', 'sections']
           && (coll != 'headshots' || request.resource == null
               || (request.resource.data.dataUrl is string
                   && request.resource.data.dataUrl.size() < 400000));

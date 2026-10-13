@@ -84,6 +84,23 @@ test('editors can write org chart data', async () => {
   await assertSucceeds(setDoc(doc(db, 'orgchart/main'), { orgTitle: 'Kenwood Org' }, { merge: true }));
 });
 
+test('editors can write section headers; viewers can read but not write; blocked members get neither', async () => {
+  const editorDb = as(kw('editor'));
+  await assertSucceeds(setDoc(doc(editorDb, 'orgchart/main/sections/s1'), { text: 'Leadership', department: null, x: 0, y: 0 }));
+  await assertSucceeds(updateDoc(doc(editorDb, 'orgchart/main/sections/s1'), { text: 'Senior Leadership' }));
+
+  // 'mentee' has no explicit orgchart role, so falls back to modules/orgchart's defaultRole ('viewer')
+  const viewerDb = as(kw('mentee'));
+  await assertSucceeds(getDoc(doc(viewerDb, 'orgchart/main/sections/s1')));
+  await assertFails(setDoc(doc(viewerDb, 'orgchart/main/sections/s2'), { text: 'Ops', department: null, x: 0, y: 0 }));
+
+  const blockedDb = as(kw('noaccess'));
+  await assertFails(getDoc(doc(blockedDb, 'orgchart/main/sections/s1')));
+  await assertFails(setDoc(doc(blockedDb, 'orgchart/main/sections/s3'), { text: 'x', department: null, x: 0, y: 0 }));
+
+  await assertSucceeds(deleteDoc(doc(editorDb, 'orgchart/main/sections/s1')));
+});
+
 test('editors cannot write outside the known org chart collections or oversize photos', async () => {
   const db = as(kw('editor'));
   await assertFails(setDoc(doc(db, 'orgchart/main/secrets/x'), { a: 1 }));

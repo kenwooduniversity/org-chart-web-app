@@ -79,6 +79,14 @@ header .org-title:hover{border-color:var(--border-strong);}
 .node-dept{margin-top:7px;font-size:10.5px;color:var(--text-faint);display:flex;align-items:center;gap:5px;}
 .node-dept .dot{width:7px;height:7px;border-radius:50%;flex:none;}
 .node .addchild{position:absolute;bottom:-11px;left:50%;transform:translateX(-50%);width:22px;height:22px;border-radius:50%;background:var(--accent);color:var(--accent-text);border:2px solid var(--bg);display:none;align-items:center;justify-content:center;font-size:15px;line-height:1;font-weight:700;}
+.section-header{position:absolute;min-width:160px;padding:6px 10px;cursor:grab;border-radius:8px;border:1px dashed transparent;}
+.section-header:hover,.section-header.selected{border-color:var(--border-strong);background:color-mix(in srgb, var(--text) 4%, transparent);}
+.section-header.dragging{cursor:grabbing;opacity:.85;z-index:50;}
+.section-header .section-text{font-weight:800;font-size:17px;letter-spacing:.02em;text-transform:uppercase;color:var(--text);outline:none;cursor:text;min-width:40px;}
+.section-header .section-dept{margin-top:4px;font-size:11px;border:none;background:transparent;color:var(--text-dim);cursor:pointer;max-width:200px;}
+.section-header .section-controls{position:absolute;top:-11px;right:-11px;display:none;gap:4px;}
+.section-header:hover .section-controls,.section-header.selected .section-controls{display:flex;}
+.section-header .section-del{width:20px;height:20px;border-radius:50%;background:var(--danger,#c0392b);color:#fff;border:2px solid var(--bg);font-size:12px;line-height:1;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;}
 .node:hover .addchild{display:flex;}
 
 /* side panel */
@@ -147,6 +155,7 @@ header .org-title:hover{border-color:var(--border-strong);}
   <div class="grow"></div>
   <div class="hdr-group">
     <button class="btn" id="btnAddRoot">+ Position</button>
+    <button class="btn" id="btnAddSection">+ Section header</button>
     <button class="btn" id="btnDepts">Departments</button>
     <button class="btn" id="btnPeople">People</button>
     <button class="btn" id="btnVersions">Version history</button>
@@ -169,6 +178,12 @@ header .org-title:hover{border-color:var(--border-strong);}
       <div style="max-width:280px;">Add the first position to start building the chart.</div>
       <button class="btn primary" id="btnAddFirst">+ Add first position</button>
       <button class="btn" id="btnImportFirst" style="display:none;">Import from a backup file</button>
+    </div>
+    <div class="empty-state" id="noAccessState" style="display:none;">
+      <div style="font-size:32px;">🔒</div>
+      <div style="font-size:15px;font-weight:600;color:var(--text);">Can't load this chart</div>
+      <div style="max-width:340px;">This org chart's live data only loads for people signed in to Claude under this organization's account. If you're not signed in, or you're signed in with a different Claude account, you'll see this instead of the chart.</div>
+      <div style="max-width:340px;font-size:12px;">Ask the chart's owner to confirm you're signed in to Claude with an account on their organization, then reload this page.</div>
     </div>
     <div class="zoom-ctrl">
       <button id="zoomIn">+</button>
@@ -204,6 +219,7 @@ var PALETTE = ["#4f6bed","#e0654a","#3fa77a","#c98a2c","#8a5fd6","#2ba8b8","#d64
 /* ---------------- state ---------------- */
 var state = {
   positions: {},      // id -> doc
+  sections: {},        // id -> {id,text,department,x,y} -- free-floating section headers/labels
   departments: {},    // id -> doc
   people: {},          // id -> {id,name,affiliation,headshotId} -- centralized so one edit maps everywhere they appear
   versions: [],
@@ -384,7 +400,7 @@ function setReadOnly(ro){
 }
 function renderToolbarEnabled(){
   var ro = state.readOnly;
-  ["btnAddRoot","btnDepts","btnPeople","btnVersions","btnAddFirst"].forEach(function(id){
+  ["btnAddRoot","btnAddSection","btnDepts","btnPeople","btnVersions","btnAddFirst"].forEach(function(id){
     var el=document.getElementById(id); if(el) el.disabled = ro;
   });
 }
@@ -403,6 +419,13 @@ function subscribeAll(){
     maybeMigratePeople();
     maybeDedupePeople();
   }, function(err){ console.warn("positions sub error", err); });
+
+  db.collection("sections").onSnapshot(function(snap){
+    var map={};
+    snap.docs.forEach(function(d){ map[d.id]=Object.assign({id:d.id}, d.data()); });
+    state.sections = map;
+    render();
+  }, function(err){ console.warn("sections sub error", err); });
 
   db.collection("departments").onSnapshot(function(snap){
     var map={};
@@ -566,6 +589,15 @@ function visiblePositions(){
   Object.keys(all).forEach(function(id){ if(all[id].department===state.deptFilter) out[id]=all[id]; });
   return out;
 }
+// Section headers scoped to a department only show while viewing "All" or that
+// department; headers with no department (general labels) always show.
+function visibleSections(){
+  var all = state.sections;
+  if(state.deptFilter==="all") return all;
+  var out={};
+  Object.keys(all).forEach(function(id){ var s=all[id]; if(!s.department || s.department===state.deptFilter) out[id]=s; });
+  return out;
+}
 function computeLayout(vis){
   var childrenOf={};
   Object.keys(vis).forEach(function(id){
@@ -603,11 +635,14 @@ function computeLayout(vis){
 
 /* ---------------- rendering ---------------- */
 var nodeEls = {};
+var sectionEls = {};
+var SECTION_W = 260, SECTION_H = 50; // nominal footprint, for bounding-box/layout purposes only
 var PAD = 480; // open space kept around the chart on every side, so there's no "ceiling" or wall to hit
 var canvasOffset = {x:PAD, y:PAD};
 var hasAutoScrolled = false;
 function render(){
   var vis = visiblePositions();
+  var visSec = visibleSections();
   var wrap = document.getElementById("canvasWrap");
   var canvas = document.getElementById("canvas");
   var empty = document.getElementById("emptyState");
@@ -618,14 +653,20 @@ function render(){
   var layout = computeLayout(vis);
   var pos = layout.pos;
 
-  // clear stale nodes
+  // clear stale nodes / section headers
   Object.keys(nodeEls).forEach(function(id){ if(!vis[id]){ nodeEls[id].remove(); delete nodeEls[id]; } });
+  Object.keys(sectionEls).forEach(function(id){ if(!visSec[id]){ sectionEls[id].remove(); delete sectionEls[id]; } });
 
   // find the content's bounding box (positions can go negative once dragged), then pad every side
   var minX=0, minY=0, maxX=NODE_W, maxY=NODE_H;
   Object.keys(pos).forEach(function(id){
     minX=Math.min(minX,pos[id].x); minY=Math.min(minY,pos[id].y);
     maxX=Math.max(maxX,pos[id].x+NODE_W); maxY=Math.max(maxY,pos[id].y+NODE_H);
+  });
+  Object.keys(visSec).forEach(function(id){
+    var s=visSec[id], sx=s.x||0, sy=s.y||0;
+    minX=Math.min(minX,sx); minY=Math.min(minY,sy);
+    maxX=Math.max(maxX,sx+SECTION_W); maxY=Math.max(maxY,sy+SECTION_H);
   });
   var offsetX = PAD - minX, offsetY = PAD - minY;
   canvasOffset = {x:offsetX, y:offsetY};
@@ -679,6 +720,55 @@ function render(){
     }
   });
 
+  Object.keys(visSec).forEach(function(id){
+    var s = visSec[id];
+    var el = sectionEls[id];
+    if(!el){
+      el = document.createElement("div");
+      el.className = "section-header";
+      el.innerHTML = '<div class="section-text" contenteditable="false" spellcheck="false"></div>'+
+        '<select class="section-dept"></select>'+
+        '<div class="section-controls"><button class="section-del" title="Delete section">×</button></div>';
+      canvas.appendChild(el);
+      sectionEls[id] = el;
+      el.addEventListener("pointerdown", function(ev){ onSectionPointerDown(ev, id); });
+      var textEl = el.querySelector(".section-text");
+      textEl.addEventListener("pointerdown", function(ev){ if(!state.readOnly) ev.stopPropagation(); });
+      textEl.addEventListener("blur", function(){
+        var val = textEl.textContent.trim() || "Section";
+        guardedWrite(function(){ return db.doc("sections/"+id).update({text: val}); });
+      });
+      textEl.addEventListener("keydown", function(ev){ if(ev.key==="Enter"){ ev.preventDefault(); textEl.blur(); } });
+      var deptSel = el.querySelector(".section-dept");
+      deptSel.addEventListener("pointerdown", function(ev){ ev.stopPropagation(); });
+      deptSel.addEventListener("change", function(){
+        guardedWrite(function(){ return db.doc("sections/"+id).update({department: deptSel.value || null}); });
+      });
+      el.querySelector(".section-del").addEventListener("pointerdown", function(ev){ ev.stopPropagation(); });
+      el.querySelector(".section-del").addEventListener("click", function(ev){
+        ev.stopPropagation();
+        showConfirm("Delete this section header?", {title:"Delete section", okLabel:"Delete", danger:true}).then(function(ok){
+          if(ok) guardedWrite(function(){ return db.doc("sections/"+id).delete(); });
+        });
+      });
+    }
+    el.style.left = ((s.x||0)+offsetX)+"px";
+    el.style.top = ((s.y||0)+offsetY)+"px";
+    var textEl = el.querySelector(".section-text");
+    if(document.activeElement!==textEl) textEl.textContent = s.text||"Section";
+    textEl.contentEditable = state.readOnly ? "false" : "true";
+    var deptSel = el.querySelector(".section-dept");
+    if(document.activeElement!==deptSel){
+      var opts = ['<option value="">General (always shown)</option>'].concat(
+        Object.keys(state.departments).sort(function(a,b){return state.departments[a].name.localeCompare(state.departments[b].name);})
+          .map(function(did){ return '<option value="'+did+'"'+(s.department===did?" selected":"")+'>'+esc(state.departments[did].name)+'</option>'; })
+      ).join("");
+      deptSel.innerHTML = opts;
+    }
+    deptSel.disabled = state.readOnly;
+    el.querySelector(".section-del").style.display = state.readOnly ? "none" : "flex";
+  });
+
   drawEdges(vis, pos, offsetX, offsetY);
 
   if(!hasAutoScrolled){
@@ -689,7 +779,8 @@ function render(){
 /* zoom/scroll so the whole visible org structure fits in the current viewport */
 function zoomFitAll(){
   var vis = visiblePositions();
-  if(Object.keys(vis).length===0) return;
+  var visSec = visibleSections();
+  if(Object.keys(vis).length===0 && Object.keys(visSec).length===0) return;
   var layout = computeLayout(vis);
   var pos = layout.pos;
   var ids = Object.keys(pos);
@@ -698,6 +789,12 @@ function zoomFitAll(){
     minX=Math.min(minX,pos[id].x); minY=Math.min(minY,pos[id].y);
     maxX=Math.max(maxX,pos[id].x+NODE_W); maxY=Math.max(maxY,pos[id].y+NODE_H);
   });
+  Object.keys(visSec).forEach(function(id){
+    var s=visSec[id], sx=s.x||0, sy=s.y||0;
+    minX=Math.min(minX,sx); minY=Math.min(minY,sy);
+    maxX=Math.max(maxX,sx+SECTION_W); maxY=Math.max(maxY,sy+SECTION_H);
+  });
+  if(minX===Infinity){ minX=0; minY=0; maxX=NODE_W; maxY=NODE_H; }
   var contentW = Math.max(1,maxX-minX), contentH = Math.max(1,maxY-minY);
   var wrap = document.getElementById("canvasWrap");
   var margin = 48;
@@ -795,6 +892,50 @@ function onNodePointerDown(ev, id){
   }
   el.addEventListener("pointermove", move);
   el.addEventListener("pointerup", up);
+}
+function onSectionPointerDown(ev, id){
+  if(state.readOnly) return;
+  var el = sectionEls[id];
+  if(!el) return;
+  el._dragged = false;
+  var startX=ev.clientX, startY=ev.clientY;
+  var origin = {left:parseFloat(el.style.left), top:parseFloat(el.style.top)};
+  el.classList.add("dragging");
+  el.setPointerCapture(ev.pointerId);
+  function move(e){
+    var dx=(e.clientX-startX)/state.scale, dy=(e.clientY-startY)/state.scale;
+    if(Math.abs(dx)>3||Math.abs(dy)>3) el._dragged=true;
+    el.style.left=(origin.left+dx)+"px";
+    el.style.top=(origin.top+dy)+"px";
+  }
+  function up(){
+    el.classList.remove("dragging");
+    el.removeEventListener("pointermove", move);
+    el.removeEventListener("pointerup", up);
+    if(el._dragged){
+      var nx = parseFloat(el.style.left)-canvasOffset.x, ny = parseFloat(el.style.top)-canvasOffset.y;
+      guardedWrite(function(){ return db.doc("sections/"+id).update({x:nx, y:ny}); });
+    }
+    setTimeout(function(){ el._dragged=false; },0);
+  }
+  el.addEventListener("pointermove", move);
+  el.addEventListener("pointerup", up);
+}
+function addSectionHeader(){
+  if(state.readOnly) return;
+  var id = uid("sec");
+  // drop the new header near the middle of the current viewport so it's visible immediately
+  var wrap = document.getElementById("canvasWrap");
+  var vx = (wrap.scrollLeft + wrap.clientWidth/2)/state.scale - canvasOffset.x;
+  var vy = (wrap.scrollTop + 40)/state.scale - canvasOffset.y;
+  var doc = {id:id, text:"New Section", department: state.deptFilter!=="all" ? state.deptFilter : null, x:vx, y:vy};
+  guardedWrite(function(){ return db.doc("sections/"+id).set(doc); }).then(function(ok){
+    if(ok){
+      render();
+      var el = sectionEls[id];
+      if(el){ var t=el.querySelector(".section-text"); if(t){ t.focus(); document.execCommand && document.getSelection().selectAllChildren(t); } }
+    }
+  });
 }
 
 /* ---------------- guarded writes ---------------- */
@@ -1327,9 +1468,10 @@ function saveVersion(){
     var snapshotPositions = Object.values(state.positions);
     var snapshotDepts = Object.values(state.departments);
     var snapshotPeople = Object.values(state.people);
+    var snapshotSections = Object.values(state.sections);
     var id = uid("ver");
     guardedWrite(function(){
-      return db.doc("versions/"+id).set({label:label, createdAt: new Date().toISOString(), positions: snapshotPositions, departments: snapshotDepts, people: snapshotPeople});
+      return db.doc("versions/"+id).set({label:label, createdAt: new Date().toISOString(), positions: snapshotPositions, departments: snapshotDepts, people: snapshotPeople, sections: snapshotSections});
     }).then(function(){ toast("Version saved."); });
   });
 }
@@ -1346,6 +1488,9 @@ function restoreVersion(v){
     Object.keys(state.departments).forEach(function(id){ if(!keepDeptIds[id]) writes.push(db.doc("departments/"+id).delete()); });
     var keepPeopleIds={}; (v.people||[]).forEach(function(person){keepPeopleIds[person.id]=true;});
     Object.keys(state.people).forEach(function(id){ if(!keepPeopleIds[id]) writes.push(db.doc("people/"+id).delete()); });
+    (v.sections||[]).forEach(function(sec){ writes.push(db.doc("sections/"+sec.id).set(sec)); });
+    var keepSectionIds={}; (v.sections||[]).forEach(function(sec){keepSectionIds[sec.id]=true;});
+    Object.keys(state.sections).forEach(function(id){ if(!keepSectionIds[id]) writes.push(db.doc("sections/"+id).delete()); });
     guardedWrite(function(){ return Promise.all(writes); }).then(function(){ toast("Version restored."); closeVersionsModal(); });
   });
 }
@@ -1449,7 +1594,8 @@ function exportBackup(){
   var out = {format:BACKUP_FORMAT, version:1, exportedAt:new Date().toISOString(),
     config:{orgTitle:state.config.orgTitle||"Organization Chart"},
     departments:byIdStripped(state.departments), people:byIdStripped(state.people),
-    positions:JSON.parse(JSON.stringify(state.positions)), headshots:shots};
+    positions:JSON.parse(JSON.stringify(state.positions)), headshots:shots,
+    sections:byIdStripped(state.sections)};
   var name = (state.config.orgTitle||"org-chart").replace(/[^\w\- ]/g,"")+" backup "+new Date().toISOString().slice(0,10)+".json";
   saveDownload({filename:name, data:new Blob([JSON.stringify(out)], {type:"application/json"})});
   toast("Backup downloaded.");
@@ -1460,9 +1606,9 @@ function importBackup(file){
     var data;
     try{ data = JSON.parse(reader.result); }catch(e){ toast("That file isn't valid JSON."); return; }
     if(!data || data.format!==BACKUP_FORMAT || !data.positions){ toast("That file isn't an org chart backup."); return; }
-    var nPos=Object.keys(data.positions).length, nPeople=Object.keys(data.people||{}).length, nDept=Object.keys(data.departments||{}).length, nImg=Object.keys(data.headshots||{}).length;
+    var nPos=Object.keys(data.positions).length, nPeople=Object.keys(data.people||{}).length, nDept=Object.keys(data.departments||{}).length, nImg=Object.keys(data.headshots||{}).length, nSec=Object.keys(data.sections||{}).length;
     var hasCurrent = Object.keys(state.positions).length>0;
-    showConfirm("Import "+nPos+" positions, "+nPeople+" people, "+nDept+" departments and "+nImg+" photos?"+
+    showConfirm("Import "+nPos+" positions, "+nPeople+" people, "+nDept+" departments, "+nImg+" photos and "+nSec+" section headers?"+
       (hasCurrent? " This replaces the current chart. Tip: download a backup first." : ""),
       {title:"Import org chart", okLabel:"Import", danger:hasCurrent}).then(function(ok){
       if(!ok) return;
@@ -1473,9 +1619,11 @@ function importBackup(file){
       Object.keys(data.departments||{}).forEach(function(id){ put("departments", id, stripId(data.departments[id])); });
       Object.keys(data.people||{}).forEach(function(id){ put("people", id, stripId(data.people[id])); });
       Object.keys(data.positions).forEach(function(id){ var p=Object.assign({}, data.positions[id], {id:id}); put("positions", id, p); });
+      Object.keys(data.sections||{}).forEach(function(id){ var sec=Object.assign({}, data.sections[id], {id:id}); put("sections", id, sec); });
       Object.keys(state.positions).forEach(function(id){ if(!data.positions[id]) del("positions", id); });
       Object.keys(state.people).forEach(function(id){ if(!(data.people||{})[id]) del("people", id); });
       Object.keys(state.departments).forEach(function(id){ if(!(data.departments||{})[id]) del("departments", id); });
+      Object.keys(state.sections).forEach(function(id){ if(!(data.sections||{})[id]) del("sections", id); });
       ops.push({ref:fs.doc(fdb,"orgchart/main"), data:{orgTitle:(data.config&&data.config.orgTitle)||"Organization Chart"}, merge:true});
       var chunks=[]; for(var i=0;i<ops.length;i+=400) chunks.push(ops.slice(i,i+400));
       toast("Importing…");
@@ -1525,6 +1673,7 @@ document.getElementById("zoomReset").addEventListener("click", zoomFitAll);
 
 document.getElementById("viewSelect").addEventListener("change", function(e){ state.deptFilter=e.target.value; state.multiSelect.clear(); closeProfile(); render(); });
 document.getElementById("btnAddRoot").addEventListener("click", function(){ addPosition(null); });
+document.getElementById("btnAddSection").addEventListener("click", addSectionHeader);
 document.getElementById("btnAddFirst").addEventListener("click", function(){ addPosition(null); });
 document.getElementById("btnDepts").addEventListener("click", openDeptModal);
 document.getElementById("btnPeople").addEventListener("click", openPeopleModal);
@@ -1559,7 +1708,7 @@ document.getElementById("searchInput").addEventListener("change", function(e){
   wrap.addEventListener("pointerdown", function(ev){
     if(ev.button!==0) return;
     // only pan when the click starts on empty canvas, not on a node or the zoom control
-    if(ev.target.closest(".node") || ev.target.closest(".zoom-ctrl") || ev.target.closest(".empty-state")) return;
+    if(ev.target.closest(".node") || ev.target.closest(".section-header") || ev.target.closest(".zoom-ctrl") || ev.target.closest(".empty-state")) return;
     if(!ev.ctrlKey && !ev.metaKey && state.multiSelect.size){ state.multiSelect.clear(); render(); }
     panning=true;
     startX=ev.clientX; startY=ev.clientY;

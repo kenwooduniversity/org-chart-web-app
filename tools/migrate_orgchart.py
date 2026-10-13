@@ -189,7 +189,8 @@ function exportBackup(){
   var out = {format:BACKUP_FORMAT, version:1, exportedAt:new Date().toISOString(),
     config:{orgTitle:state.config.orgTitle||"Organization Chart"},
     departments:byIdStripped(state.departments), people:byIdStripped(state.people),
-    positions:JSON.parse(JSON.stringify(state.positions)), headshots:shots};
+    positions:JSON.parse(JSON.stringify(state.positions)), headshots:shots,
+    sections:byIdStripped(state.sections)};
   var name = (state.config.orgTitle||"org-chart").replace(/[^\w\- ]/g,"")+" backup "+new Date().toISOString().slice(0,10)+".json";
   saveDownload({filename:name, data:new Blob([JSON.stringify(out)], {type:"application/json"})});
   toast("Backup downloaded.");
@@ -200,9 +201,9 @@ function importBackup(file){
     var data;
     try{ data = JSON.parse(reader.result); }catch(e){ toast("That file isn't valid JSON."); return; }
     if(!data || data.format!==BACKUP_FORMAT || !data.positions){ toast("That file isn't an org chart backup."); return; }
-    var nPos=Object.keys(data.positions).length, nPeople=Object.keys(data.people||{}).length, nDept=Object.keys(data.departments||{}).length, nImg=Object.keys(data.headshots||{}).length;
+    var nPos=Object.keys(data.positions).length, nPeople=Object.keys(data.people||{}).length, nDept=Object.keys(data.departments||{}).length, nImg=Object.keys(data.headshots||{}).length, nSec=Object.keys(data.sections||{}).length;
     var hasCurrent = Object.keys(state.positions).length>0;
-    showConfirm("Import "+nPos+" positions, "+nPeople+" people, "+nDept+" departments and "+nImg+" photos?"+
+    showConfirm("Import "+nPos+" positions, "+nPeople+" people, "+nDept+" departments, "+nImg+" photos and "+nSec+" section headers?"+
       (hasCurrent? " This replaces the current chart. Tip: download a backup first." : ""),
       {title:"Import org chart", okLabel:"Import", danger:hasCurrent}).then(function(ok){
       if(!ok) return;
@@ -213,9 +214,11 @@ function importBackup(file){
       Object.keys(data.departments||{}).forEach(function(id){ put("departments", id, stripId(data.departments[id])); });
       Object.keys(data.people||{}).forEach(function(id){ put("people", id, stripId(data.people[id])); });
       Object.keys(data.positions).forEach(function(id){ var p=Object.assign({}, data.positions[id], {id:id}); put("positions", id, p); });
+      Object.keys(data.sections||{}).forEach(function(id){ var sec=Object.assign({}, data.sections[id], {id:id}); put("sections", id, sec); });
       Object.keys(state.positions).forEach(function(id){ if(!data.positions[id]) del("positions", id); });
       Object.keys(state.people).forEach(function(id){ if(!(data.people||{})[id]) del("people", id); });
       Object.keys(state.departments).forEach(function(id){ if(!(data.departments||{})[id]) del("departments", id); });
+      Object.keys(state.sections).forEach(function(id){ if(!(data.sections||{})[id]) del("sections", id); });
       ops.push({ref:fs.doc(fdb,"orgchart/main"), data:{orgTitle:(data.config&&data.config.orgTitle)||"Organization Chart"}, merge:true});
       var chunks=[]; for(var i=0;i<ops.length;i+=400) chunks.push(ops.slice(i,i+400));
       toast("Importing…");

@@ -27,7 +27,8 @@ orgchart/main/positions/{id}       { title, personId, department, reportsTo, res
 orgchart/main/people/{id}          { name, affiliation, headshotId }
 orgchart/main/departments/{id}     { name, color }
 orgchart/main/headshots/{id}       { dataUrl }   ← ≤320px JPEG thumbnail (free plan: no Storage bucket)
-orgchart/main/versions/{id}        { label, createdAt, positions[], departments[], people[] }
+orgchart/main/versions/{id}        { label, createdAt, positions[], departments[], people[], sections[] }
+orgchart/main/sections/{id}        { text, department, x, y }   ← free-floating section header/label; department is null for an unscoped header, otherwise ties it to one department's view
 ```
 
 Viewers read; editors change; admins can also import a backup (which replaces the chart).
