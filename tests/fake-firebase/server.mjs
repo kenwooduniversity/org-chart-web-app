@@ -55,7 +55,7 @@ function allowed(user, op, path, newData, oldData) {
     if (op === 'read') return a.canRead('orgchart');
     if (!a.canWrite('orgchart')) return false;
     if (seg.length === 2) return true;
-    if (!['positions', 'people', 'departments', 'versions', 'headshots'].includes(seg[2])) return false;
+    if (!['positions', 'people', 'departments', 'versions', 'headshots', 'sections'].includes(seg[2])) return false;
     if (seg[2] === 'headshots' && op !== 'delete') return typeof newData?.dataUrl === 'string' && newData.dataUrl.length < 400000;
     return true;
   }

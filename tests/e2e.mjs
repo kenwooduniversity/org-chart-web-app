@@ -151,6 +151,19 @@ await step('adding a position and uploading a headshot works', async () => {
   await owner.waitForFunction(() => { const i = document.querySelector('#pfAvatar img'); return i && i.src.startsWith('data:image/jpeg'); }, null, { timeout: 15000 });
 });
 
+await step('section headers: add, rename, persist across reload', async () => {
+  await owner.click('#btnAddSection');
+  await owner.waitForSelector('.section-header .section-text');
+  const t = owner.locator('.section-header .section-text').first();
+  await t.click();
+  await owner.keyboard.press('Control+A');
+  await owner.keyboard.type('Leadership Team');
+  await owner.keyboard.press('Enter');
+  await owner.waitForTimeout(800);
+  await owner.reload();
+  await owner.waitForFunction(() => [...document.querySelectorAll('.section-header .section-text')].some((e) => e.textContent === 'Leadership Team'), null, { timeout: 15000 });
+});
+
 await step('PNG export downloads a file', async () => {
   const [dl] = await Promise.all([owner.waitForEvent('download', { timeout: 30000 }), owner.click('#btnExportPng')]);
   assert.match(dl.suggestedFilename(), /\.png$/);
@@ -187,6 +200,8 @@ await step('mentee (default viewer) can see the chart but not edit', async () =>
   assert.equal(await p.textContent('.k-role'), 'Viewer');
   assert.equal(await p.isDisabled('#btnAddRoot'), true);
   assert.equal(await p.isVisible('#roleBadge'), true);
+  assert.equal(await p.isDisabled('#btnAddSection'), true);
+  assert.equal(await p.getAttribute('.section-header .section-text >> nth=0', 'contenteditable'), 'false');
   const denied = await p.evaluate(async () => {
     const { db, fs } = await import('../assets/platform.js');
     try { await fs.setDoc(fs.doc(db, 'orgchart/main/positions/hack'), { title: 'x' }); return 'written'; } catch (e) { return e.code; }
