@@ -2,3 +2,4 @@ node_modules/
 tests/shots/
 .firebase/
 *.log
+tests/package-lock.json
