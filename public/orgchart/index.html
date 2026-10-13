@@ -599,15 +599,33 @@ function visibleSections(){
   return out;
 }
 function computeLayout(vis){
+  var visSec = visibleSections();
+  var membersOf = sectionMembers(vis, visSec);
+  // A section header created from a position's "Section header" picker (auto:true) becomes a
+  // real step in the tree: manager → header → the positions grouped under it. That way the
+  // automatic layout reserves room for the whole group. Headers someone placed by hand keep
+  // their spot, and their group is laid out in a row beneath them afterwards.
+  var VS = "§"; // prefix for virtual section nodes in the layout tree
+  var autoSec = {};
+  Object.keys(membersOf).forEach(function(sid){ if(visSec[sid].auto) autoSec[sid]=true; });
+  function parentOf(id){
+    var p = vis[id];
+    if(p.sectionId && autoSec[p.sectionId]) return VS+p.sectionId;
+    return p.reportsTo && vis[p.reportsTo] ? p.reportsTo : null;
+  }
   var childrenOf={};
-  Object.keys(vis).forEach(function(id){
-    var p=vis[id]; var parent = p.reportsTo && vis[p.reportsTo] ? p.reportsTo : null;
-    if(!childrenOf[parent]) childrenOf[parent]=[];
-    childrenOf[parent].push(id);
+  function addChild(parent, id){ if(!childrenOf[parent]) childrenOf[parent]=[]; childrenOf[parent].push(id); }
+  Object.keys(vis).forEach(function(id){ addChild(parentOf(id), id); });
+  Object.keys(autoSec).forEach(function(sid){
+    // the header hangs off the manager most of its group reports to
+    var count={}, best=null;
+    membersOf[sid].forEach(function(mid){ var r=vis[mid].reportsTo; if(r && vis[r] && vis[r].sectionId!==sid && !isDescendant(r, mid)){ count[r]=(count[r]||0)+1; if(!best || count[r]>count[best]) best=r; } });
+    addChild(best, VS+sid);
   });
-  Object.keys(childrenOf).forEach(function(k){ childrenOf[k].sort(function(a,b){ return (vis[a].title||"").localeCompare(vis[b].title||""); }); });
+  function titleOf(id){ return id.charAt(0)===VS ? (visSec[id.slice(1)].text||"") : (vis[id].title||""); }
+  Object.keys(childrenOf).forEach(function(k){ childrenOf[k].sort(function(a,b){ return titleOf(a).localeCompare(titleOf(b)); }); });
   var roots = childrenOf[null] || [];
-  var pos = {};
+  var pos = {}, secPos = {};
   var unit = NODE_W+HGAP;
   function widthOf(id){
     var kids = childrenOf[id]||[];
@@ -620,17 +638,70 @@ function computeLayout(vis){
     var kids = childrenOf[id]||[];
     var w = widthOf(id);
     var cx = xStart + w/2;
-    pos[id] = {x: cx-NODE_W/2, y: depth*(NODE_H+VGAP)};
+    if(id.charAt(0)===VS) secPos[id.slice(1)] = {cx:cx, y: depth*(NODE_H+VGAP) + (NODE_H-SECTION_H)};
+    else pos[id] = {x: cx-NODE_W/2, y: depth*(NODE_H+VGAP)};
     var kx = xStart;
     kids.forEach(function(k){ var kw=widthOf(k); place(k, kx, depth+1); kx+=kw; });
   }
   roots.forEach(function(r){ var w=widthOf(r); place(r, cursorX, 0); cursorX+=w; });
-  // apply manual overrides
+  // apply manual overrides (a position grouped under a header is always placed by its header)
   Object.keys(vis).forEach(function(id){
     var p=vis[id];
+    if(p.sectionId && visSec[p.sectionId]) return;
     if(p.manual && typeof p.x==="number" && typeof p.y==="number"){ pos[id] = {x:p.x, y:p.y}; }
   });
-  return {pos:pos, childrenOf:childrenOf, roots:roots};
+  // hand-placed headers: their group sits in a row beneath them; anyone reporting to the
+  // group (who isn't pinned or grouped under a header of their own) follows along
+  Object.keys(visSec).forEach(function(sid){
+    var s = visSec[sid];
+    if(autoSec[sid]) return;
+    secPos[sid] = {x:s.x||0, y:s.y||0};
+    var ids = membersOf[sid]; if(!ids) return;
+    // same spacing as an auto-placed header, and centered under it, so dragging a header
+    // (which turns it hand-placed) never makes its group jump
+    var rowY = (s.y||0) + SECTION_H + VGAP;
+    var hw = sectionEls[sid] ? sectionEls[sid].offsetWidth : SECTION_W;
+    var rowW = ids.reduce(function(t,mid){ return t+widthOf(mid); }, 0);
+    var cursor = (s.x||0) + hw/2 - rowW/2 + HGAP/2;
+    ids.forEach(function(mid){
+      var old = pos[mid] || {x:0, y:0};
+      var w = widthOf(mid); // as much room as this position's own team needs, centered over it
+      var nx = cursor + (w-unit)/2, ny = rowY;
+      cursor += w;
+      var dx = nx-old.x, dy = ny-old.y;
+      pos[mid] = {x:nx, y:ny};
+      (function shift(pid){
+        (childrenOf[pid]||[]).forEach(function(k){
+          if(k.charAt(0)===VS) return;
+          var kp = vis[k];
+          if(kp.manual || (kp.sectionId && visSec[kp.sectionId])) return;
+          if(pos[k]) pos[k] = {x:pos[k].x+dx, y:pos[k].y+dy};
+          shift(k);
+        });
+      })(mid);
+    });
+  });
+  return {pos:pos, secPos:secPos, childrenOf:childrenOf, roots:roots};
+}
+/* where a section header sits, in layout coordinates: auto-placed headers are centered on
+   their computed spot (needs the rendered width), hand-placed ones use their saved x/y */
+function sectionBox(sid, layout){
+  var sp = layout.secPos[sid] || {x:0, y:0};
+  var el = sectionEls[sid];
+  var w = el ? el.offsetWidth : SECTION_W, h = el ? el.offsetHeight : SECTION_H;
+  var x = (typeof sp.cx==="number") ? sp.cx - w/2 : sp.x;
+  return {x:x, y:sp.y, w:w, h:h};
+}
+/* sectionId -> [positionIds], only for sections and positions currently visible,
+   ordered by title so the row under each header is stable */
+function sectionMembers(vis, visSec){
+  var out = {};
+  Object.keys(vis).forEach(function(id){
+    var sid = vis[id].sectionId;
+    if(sid && visSec[sid]) (out[sid] = out[sid]||[]).push(id);
+  });
+  Object.keys(out).forEach(function(sid){ out[sid].sort(function(a,b){ return (vis[a].title||"").localeCompare(vis[b].title||""); }); });
+  return out;
 }
 
 /* ---------------- rendering ---------------- */
@@ -664,7 +735,7 @@ function render(){
     maxX=Math.max(maxX,pos[id].x+NODE_W); maxY=Math.max(maxY,pos[id].y+NODE_H);
   });
   Object.keys(visSec).forEach(function(id){
-    var s=visSec[id], sx=s.x||0, sy=s.y||0;
+    var sb=sectionBox(id, layout), sx=sb.x, sy=sb.y;
     minX=Math.min(minX,sx); minY=Math.min(minY,sy);
     maxX=Math.max(maxX,sx+SECTION_W); maxY=Math.max(maxY,sy+SECTION_H);
   });
@@ -747,13 +818,16 @@ function render(){
       el.querySelector(".section-del").addEventListener("pointerdown", function(ev){ ev.stopPropagation(); });
       el.querySelector(".section-del").addEventListener("click", function(ev){
         ev.stopPropagation();
-        showConfirm("Delete this section header?", {title:"Delete section", okLabel:"Delete", danger:true}).then(function(ok){
-          if(ok) guardedWrite(function(){ return db.doc("sections/"+id).delete(); });
+        var grouped = Object.values(state.positions).filter(function(p){ return p.sectionId===id; });
+        var msg = "Delete this section header?"+(grouped.length? (" The "+grouped.length+" position(s) grouped under it stay in the chart and go back to the normal layout.") : "");
+        showConfirm(msg, {title:"Delete section", okLabel:"Delete", danger:true}).then(function(ok){
+          if(!ok) return;
+          var writes = grouped.map(function(p){ return db.doc("positions/"+p.id).update({sectionId:null}); });
+          writes.push(db.doc("sections/"+id).delete());
+          guardedWrite(function(){ return Promise.all(writes); });
         });
       });
     }
-    el.style.left = ((s.x||0)+offsetX)+"px";
-    el.style.top = ((s.y||0)+offsetY)+"px";
     var textEl = el.querySelector(".section-text");
     if(document.activeElement!==textEl) textEl.textContent = s.text||"Section";
     textEl.contentEditable = state.readOnly ? "false" : "true";
@@ -767,9 +841,12 @@ function render(){
     }
     deptSel.disabled = state.readOnly;
     el.querySelector(".section-del").style.display = state.readOnly ? "none" : "flex";
+    var sb = sectionBox(id, layout);
+    el.style.left = (sb.x+offsetX)+"px";
+    el.style.top = (sb.y+offsetY)+"px";
   });
 
-  drawEdges(vis, pos, offsetX, offsetY);
+  drawEdges(vis, layout, offsetX, offsetY);
 
   if(!hasAutoScrolled){
     hasAutoScrolled = true;
@@ -790,7 +867,7 @@ function zoomFitAll(){
     maxX=Math.max(maxX,pos[id].x+NODE_W); maxY=Math.max(maxY,pos[id].y+NODE_H);
   });
   Object.keys(visSec).forEach(function(id){
-    var s=visSec[id], sx=s.x||0, sy=s.y||0;
+    var sb=sectionBox(id, layout), sx=sb.x, sy=sb.y;
     minX=Math.min(minX,sx); minY=Math.min(minY,sy);
     maxX=Math.max(maxX,sx+SECTION_W); maxY=Math.max(maxY,sy+SECTION_H);
   });
@@ -809,14 +886,33 @@ function zoomFitAll(){
   wrap.scrollLeft = Math.max(0, contentLeftPx - Math.max(0,(wrap.clientWidth-contentWpx)/2));
   wrap.scrollTop = Math.max(0, contentTopPx - Math.max(0,(wrap.clientHeight-contentHpx)/2));
 }
-function drawEdges(vis, pos, offsetX, offsetY){
+function drawEdges(vis, layout, offsetX, offsetY){
+  var pos = layout.pos;
   var svg = document.getElementById("edgeLayer");
   var canvas = document.getElementById("canvas");
   svg.setAttribute("width", canvas.style.width);
   svg.setAttribute("height", canvas.style.height);
   var paths=[];
+  var visSec = visibleSections();
+  var drawnToSection = {};
+  function curve(x1,y1,x2,y2){
+    var midY=(y1+y2)/2;
+    return '<path d="M'+x1+","+y1+" C"+x1+","+midY+" "+x2+","+midY+" "+x2+","+y2+'" stroke="var(--border-strong)" stroke-width="1.6" fill="none"/>';
+  }
   Object.keys(vis).forEach(function(id){
     var p=vis[id]; var parent = p.reportsTo;
+    var sec = p.sectionId && visSec[p.sectionId];
+    if(sec && pos[id]){
+      // grouped under a section header: manager → header (once), header → this position
+      var sb = sectionBox(p.sectionId, layout);
+      var sx = sb.x+offsetX+sb.w/2, syTop = sb.y+offsetY, syBot = syTop+sb.h;
+      paths.push(curve(sx, syBot, pos[id].x+offsetX+NODE_W/2, pos[id].y+offsetY));
+      if(parent && vis[parent] && pos[parent] && !drawnToSection[parent+"|"+p.sectionId]){
+        drawnToSection[parent+"|"+p.sectionId] = true;
+        paths.push(curve(pos[parent].x+offsetX+NODE_W/2, pos[parent].y+offsetY+NODE_H, sx, syTop));
+      }
+      return;
+    }
     if(parent && vis[parent] && pos[id] && pos[parent]){
       var a=pos[parent], b=pos[id];
       var x1=a.x+offsetX+NODE_W/2, y1=a.y+offsetY+NODE_H;
@@ -860,6 +956,15 @@ function onNodePointerDown(ev, id){
     var gEl = nodeEls[gid];
     if(gEl) origins[gid] = {left:parseFloat(gEl.style.left), top:parseFloat(gEl.style.top)};
   });
+  // section headers that group someone in this drag come along too, so the group stays
+  // under its header. The exception is a dragged box itself: pulling it away detaches it.
+  var secMove = {};
+  groupIds.forEach(function(gid){
+    var gp = state.positions[gid];
+    if(gp && gp.sectionId && sectionEls[gp.sectionId] && baseIds.indexOf(gid)<0) secMove[gp.sectionId] = true;
+  });
+  var secIds = Object.keys(secMove), secOrigins = {};
+  secIds.forEach(function(sid){ var sEl=sectionEls[sid]; secOrigins[sid] = {left:parseFloat(sEl.style.left), top:parseFloat(sEl.style.top)}; });
 
   el.classList.add("dragging");
   groupIds.forEach(function(gid){ if(nodeEls[gid]) nodeEls[gid].classList.add("dragging"); });
@@ -874,19 +979,35 @@ function onNodePointerDown(ev, id){
       gEl.style.left=(o.left+dx)+"px";
       gEl.style.top=(o.top+dy)+"px";
     });
+    secIds.forEach(function(sid){
+      var sEl=sectionEls[sid], o=secOrigins[sid]; if(!sEl) return;
+      sEl.style.left=(o.left+dx)+"px"; sEl.style.top=(o.top+dy)+"px";
+    });
   }
   function up(e){
     groupIds.forEach(function(gid){ if(nodeEls[gid]) nodeEls[gid].classList.remove("dragging"); });
     el.removeEventListener("pointermove", move);
     el.removeEventListener("pointerup", up);
     if(el._dragged){
+      var detached = 0;
       var writes = groupIds.map(function(gid){
         var gEl=nodeEls[gid]; if(!gEl) return Promise.resolve();
+        var gp = state.positions[gid];
         // el.style.left/top are in rendered (padded) space; store raw layout coordinates
         var nx=parseFloat(gEl.style.left)-canvasOffset.x, ny=parseFloat(gEl.style.top)-canvasOffset.y;
-        return db.doc("positions/"+gid).update({manual:true, x:nx, y:ny});
+        if(gp && gp.sectionId && secMove[gp.sectionId]) return Promise.resolve(); // placed by its header
+        var upd = {manual:true, x:nx, y:ny};
+        if(gp && gp.sectionId && baseIds.indexOf(gid)>=0){ upd.sectionId = null; detached++; }
+        return db.doc("positions/"+gid).update(upd);
       });
-      guardedWrite(function(){ return Promise.all(writes); });
+      secIds.forEach(function(sid){
+        var sEl=sectionEls[sid]; if(!sEl) return;
+        writes.push(db.doc("sections/"+sid).update({x:parseFloat(sEl.style.left)-canvasOffset.x, y:parseFloat(sEl.style.top)-canvasOffset.y, auto:false}));
+      });
+      guardedWrite(function(){ return Promise.all(writes); }).then(function(ok){
+        if(ok && detached) toast("Moved out of its section header.");
+        if(ok && detached && state.selectedId && groupIds.indexOf(state.selectedId)>=0) openProfile(state.selectedId);
+      });
     }
     setTimeout(function(){ el._dragged=false; },0);
   }
@@ -900,6 +1021,17 @@ function onSectionPointerDown(ev, id){
   el._dragged = false;
   var startX=ev.clientX, startY=ev.clientY;
   var origin = {left:parseFloat(el.style.left), top:parseFloat(el.style.top)};
+  // positions grouped under this header (and everyone below them) travel with it
+  var riders = {};
+  Object.values(state.positions).forEach(function(p){
+    if(p.sectionId===id && nodeEls[p.id]){
+      riders[p.id]=true;
+      var desc=[]; collectDescendants(p.id, desc);
+      desc.forEach(function(d){ var dp=state.positions[d]; if(nodeEls[d] && !(dp.sectionId && dp.sectionId!==id)) riders[d]=true; });
+    }
+  });
+  var riderIds = Object.keys(riders), riderOrigins = {};
+  riderIds.forEach(function(rid){ var r=nodeEls[rid]; riderOrigins[rid]={left:parseFloat(r.style.left), top:parseFloat(r.style.top)}; });
   el.classList.add("dragging");
   el.setPointerCapture(ev.pointerId);
   function move(e){
@@ -907,6 +1039,7 @@ function onSectionPointerDown(ev, id){
     if(Math.abs(dx)>3||Math.abs(dy)>3) el._dragged=true;
     el.style.left=(origin.left+dx)+"px";
     el.style.top=(origin.top+dy)+"px";
+    riderIds.forEach(function(rid){ var r=nodeEls[rid], o=riderOrigins[rid]; if(r){ r.style.left=(o.left+dx)+"px"; r.style.top=(o.top+dy)+"px"; } });
   }
   function up(){
     el.classList.remove("dragging");
@@ -914,7 +1047,16 @@ function onSectionPointerDown(ev, id){
     el.removeEventListener("pointerup", up);
     if(el._dragged){
       var nx = parseFloat(el.style.left)-canvasOffset.x, ny = parseFloat(el.style.top)-canvasOffset.y;
-      guardedWrite(function(){ return db.doc("sections/"+id).update({x:nx, y:ny}); });
+      var writes = [db.doc("sections/"+id).update({x:nx, y:ny, auto:false})];
+      // pinned (manually placed) reports below the group need their saved spot moved too
+      riderIds.forEach(function(rid){
+        var rp = state.positions[rid];
+        if(rp && rp.manual && !rp.sectionId){
+          var r=nodeEls[rid];
+          writes.push(db.doc("positions/"+rid).update({x:parseFloat(r.style.left)-canvasOffset.x, y:parseFloat(r.style.top)-canvasOffset.y}));
+        }
+      });
+      guardedWrite(function(){ return Promise.all(writes); });
     }
     setTimeout(function(){ el._dragged=false; },0);
   }
@@ -972,6 +1114,7 @@ function duplicatePosition(id){
     personId: null, // a duplicated position is a new, vacant slot — it doesn't clone the person
     department: src.department || null,
     reportsTo: src.reportsTo || null,
+    sectionId: src.sectionId || null, // the copy lands in the same section group as the original
     responsibilities: (src.responsibilities||[]).slice(),
     kpis: (src.kpis||[]).slice(),
     manual: true,
@@ -1023,6 +1166,17 @@ function openProfile(id){
       .sort(function(a,b){ return (state.positions[a].title||"").localeCompare(state.positions[b].title||""); })
       .map(function(k){ var kp=personOf(state.positions[k]); return '<option value="'+k+'"'+(p.reportsTo===k?" selected":"")+'>'+esc(state.positions[k].title)+(kp?(" — "+esc(kp.name)):"")+'</option>'; })
   ).join("");
+  // section headers: ones already used by this position's teammates (same manager) are listed first
+  var siblingSecs = {};
+  Object.values(state.positions).forEach(function(op){ if(op.id!==id && op.sectionId && op.reportsTo && op.reportsTo===p.reportsTo) siblingSecs[op.sectionId]=true; });
+  function secLabel(sid){ var s=state.sections[sid], d=s.department && state.departments[s.department]; return esc(s.text||"Section")+(d?(" · "+esc(d.name)):""); }
+  var secIdsSorted = Object.keys(state.sections).sort(function(a,b){
+    var sa=siblingSecs[a]?0:1, sb=siblingSecs[b]?0:1;
+    return sa-sb || (state.sections[a].text||"").localeCompare(state.sections[b].text||"");
+  });
+  var sectionOpts = ['<option value="">— none —</option>'].concat(
+    secIdsSorted.map(function(sid){ return '<option value="'+sid+'"'+(p.sectionId===sid?" selected":"")+'>'+secLabel(sid)+(siblingSecs[sid]?" (used by teammates)":"")+'</option>'; })
+  ).concat(['<option value="__new__">+ New section header…</option>']).join("");
   var chain = chainOf(id);
   var chainHtml = chain.map(function(c){ return '<a data-jump="'+c.id+'">'+esc(c.title)+'</a><span class="arrow">›</span>'; }).join("");
 
@@ -1052,6 +1206,8 @@ function openProfile(id){
       : '') +
     '<div class="field"><label>Department</label><select id="pfDept">'+deptOpts+'</select></div>'+
     '<div class="field"><label>Reports to</label><select id="pfReportsTo">'+reportsToOpts+'</select></div>'+
+    '<div class="field"><label>Section header</label><select id="pfSection">'+sectionOpts+'</select>'+
+      '<div class="hint">Groups this position in a row under a section header, with the reporting line running through it. Drag the box away from the header to take it out.</div></div>'+
     '<div class="field"><label>Responsibilities <span class="hint" style="text-transform:none;">(one per line)</span></label><textarea id="pfResp" rows="5">'+esc((p.responsibilities||[]).join("\n"))+'</textarea></div>'+
     '<div class="field"><label>KPIs <span class="hint" style="text-transform:none;">(one per line)</span></label><textarea id="pfKpis" rows="4">'+esc((p.kpis||[]).join("\n"))+'</textarea></div>'+
     (p.manual? '<button class="btn small" id="pfResetPos">Reset position (auto layout)</button>' : '');
@@ -1103,6 +1259,29 @@ function openProfile(id){
       return;
     }
     guardedWrite(function(){ return db.doc("positions/"+id).update({personId: v||null}); }).then(function(){ openProfile(id); });
+  });
+
+  var secSel = document.getElementById("pfSection");
+  secSel.disabled = state.readOnly;
+  secSel.addEventListener("change", function(){
+    var v = secSel.value;
+    if(v==="__new__"){
+      secSel.value = p.sectionId||"";
+      showPrompt("Section header text:", "New Section").then(function(text){
+        text = text && text.trim();
+        if(!text) return;
+        // auto:true — the layout slots the header in under this position's manager and reserves
+        // room for its group; it switches to a hand-placed header once someone drags it
+        var sid = uid("sec");
+        guardedWrite(function(){
+          return db.doc("sections/"+sid).set({id:sid, text:text, department:p.department||null, auto:true, x:0, y:0})
+            .then(function(){ return db.doc("positions/"+id).update({sectionId:sid, manual:false}); });
+        }).then(function(ok){ if(ok){ toast('Placed under "'+text+'".'); openProfile(id); } });
+      });
+      return;
+    }
+    guardedWrite(function(){ return db.doc("positions/"+id).update(v ? {sectionId:v, manual:false} : {sectionId:null}); })
+      .then(function(ok){ if(ok) openProfile(id); });
   });
 
   var deptSel = document.getElementById("pfDept");

@@ -164,6 +164,34 @@ await step('section headers: add, rename, persist across reload', async () => {
   await owner.waitForFunction(() => [...document.querySelectorAll('.section-header .section-text')].some((e) => e.textContent === 'Leadership Team'), null, { timeout: 15000 });
 });
 
+await step('section header picker: group a direct report under a new header, persists across reload', async () => {
+  // a direct report in the sample data (VP of Grants reports to the Executive Director)
+  const target = 'VP of Grants';
+  const openTarget = async () => {
+    await owner.evaluate((t) => [...document.querySelectorAll('.node')].find((n) => n.querySelector('.node-title').textContent === t).click(), target);
+    await owner.waitForSelector('#pfSection');
+  };
+  await openTarget();
+  await owner.selectOption('#pfSection', '__new__');
+  await owner.fill('#promptInput', 'Program Directors');
+  await owner.click('#promptYes');
+  await owner.waitForFunction(() => [...document.querySelectorAll('.section-header .section-text')].some((e) => e.textContent === 'Program Directors'), null, { timeout: 15000 });
+  await owner.waitForTimeout(800);
+  await owner.reload();
+  await owner.waitForFunction(() => [...document.querySelectorAll('.section-header .section-text')].some((e) => e.textContent === 'Program Directors'), null, { timeout: 15000 });
+  await openTarget();
+  const picked = await owner.$eval('#pfSection', (s) => s.options[s.selectedIndex].textContent);
+  assert.match(picked, /^Program Directors/);
+  // the grouped box sits directly below its header
+  const geo = await owner.evaluate((t) => {
+    const h = [...document.querySelectorAll('.section-header')].find((e) => e.querySelector('.section-text').textContent === 'Program Directors');
+    const n = [...document.querySelectorAll('.node')].find((e) => e.querySelector('.node-title').textContent === t);
+    return { hTop: parseFloat(h.style.top), hH: h.offsetHeight, nTop: parseFloat(n.style.top) };
+  }, target);
+  assert.ok(geo.nTop > geo.hTop + geo.hH, JSON.stringify(geo));
+  await owner.click('#closePanel');
+});
+
 await step('PNG export downloads a file', async () => {
   const [dl] = await Promise.all([owner.waitForEvent('download', { timeout: 30000 }), owner.click('#btnExportPng')]);
   assert.match(dl.suggestedFilename(), /\.png$/);

@@ -23,12 +23,12 @@ The UI mirrors this in `public/assets/platform.js` (`roleFor`), but the rules ar
 
 ```
 orgchart/main                      { orgTitle }
-orgchart/main/positions/{id}       { title, personId, department, reportsTo, responsibilities[], kpis[], manual, x, y }
+orgchart/main/positions/{id}       { title, personId, department, reportsTo, sectionId, responsibilities[], kpis[], manual, x, y }   ← sectionId (optional) groups the box in a row under that section header
 orgchart/main/people/{id}          { name, affiliation, headshotId }
 orgchart/main/departments/{id}     { name, color }
 orgchart/main/headshots/{id}       { dataUrl }   ← ≤320px JPEG thumbnail (free plan: no Storage bucket)
 orgchart/main/versions/{id}        { label, createdAt, positions[], departments[], people[], sections[] }
-orgchart/main/sections/{id}        { text, department, x, y }   ← free-floating section header/label; department is null for an unscoped header, otherwise ties it to one department's view
+orgchart/main/sections/{id}        { text, department, auto, x, y }   ← section header/label; department is null for an unscoped header, otherwise ties it to one department's view; auto:true (made from a position's picker) slots it into the tree under the group's manager, otherwise x/y place it by hand
 ```
 
 Viewers read; editors change; admins can also import a backup (which replaces the chart).
